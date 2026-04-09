@@ -90,7 +90,10 @@ pub async fn fetch_cm_servers(
         for entry in server_list {
             let endpoint = match entry["endpoint"].as_str() {
                 Some(e) => e,
-                None => continue,
+                None => {
+                    tracing::trace!("CM server entry missing endpoint, skipping: {entry}");
+                    continue;
+                }
             };
 
             let server_type = entry["type"].as_str().unwrap_or("");
@@ -98,11 +101,15 @@ pub async fn fetch_cm_servers(
             let server = match server_type {
                 "netfilter" => parse_dns_server(endpoint, Protocol::Tcp),
                 "websockets" => parse_dns_server(endpoint, Protocol::WebSocket),
-                _ => continue,
+                other => {
+                    tracing::trace!("Unknown CM server type {other:?}, skipping");
+                    continue;
+                }
             };
 
-            if let Some(s) = server {
-                servers.push(s);
+            match server {
+                Some(s) => servers.push(s),
+                None => tracing::warn!("Failed to parse CM server endpoint: {endpoint}"),
             }
         }
     }

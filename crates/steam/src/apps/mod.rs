@@ -53,10 +53,17 @@ impl SteamClient<LoggedIn> {
                     .app_access_tokens
                     .iter()
                     .filter_map(|t| {
-                        Some(AccessToken {
-                            app_id: AppId(t.appid?),
-                            token: t.access_token?,
-                        })
+                        let result = match (t.appid, t.access_token) {
+                            (Some(id), Some(token)) => Some(AccessToken {
+                                app_id: AppId(id),
+                                token,
+                            }),
+                            _ => None,
+                        };
+                        if result.is_none() {
+                            tracing::debug!("PICS access token entry missing fields: appid={:?} token={:?}", t.appid, t.access_token.is_some());
+                        }
+                        result
                     })
                     .collect());
             }

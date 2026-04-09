@@ -53,7 +53,18 @@ impl SteamClient<LoggedIn> {
             &resp.body[..],
         )?;
 
-        Ok(body.servers.into_iter().filter_map(parse_server_info).collect())
+        let servers: Vec<_> = body.servers
+            .into_iter()
+            .filter_map(|info| {
+                let host = info.host.clone();
+                let result = parse_server_info(info);
+                if result.is_none() {
+                    tracing::debug!("Skipping unparseable CDN server: {host:?}");
+                }
+                result
+            })
+            .collect();
+        Ok(servers)
     }
 
     /// Get a manifest request code (time-limited, ~5 min validity).

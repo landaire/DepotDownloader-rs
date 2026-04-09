@@ -13,6 +13,15 @@ use crate::event::DownloadEvent;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+/// Send an event, logging if the receiver has gone away.
+macro_rules! send_event {
+    ($tx:expr, $event:expr) => {
+        if $tx.send($event).is_err() {
+            tracing::trace!("Event receiver dropped");
+        }
+    };
+}
+
 /// A depot download job. Carries all shared context needed to download
 /// chunks from a single depot.
 pub struct DepotJob {
@@ -40,17 +49,20 @@ impl DepotJob {
         for file in &manifest.files {
             let filename = match &file.filename {
                 Some(name) => name.clone(),
-                None => continue,
+                None => {
+                    tracing::warn!("Manifest file entry has no filename, skipping");
+                    continue;
+                }
             };
 
             // Skip directories (flag 0x40 = directory)
             if file.flags.is_some_and(|f| f & 0x40 != 0) {
-                let _ = self.event_tx.send(DownloadEvent::FileSkipped {
+                send_event!(self.event_tx, DownloadEvent::FileSkipped {
                     depot_id: self.depot_id,
                     filename,
                 });
                 files_completed += 1;
-                let _ = self.event_tx.send(DownloadEvent::DepotProgress {
+                send_event!(self.event_tx, DownloadEvent::DepotProgress {
                     depot_id: self.depot_id,
                     files_completed,
                     files_total,
@@ -65,7 +77,7 @@ impl DepotJob {
                 filename: filename.clone(),
             };
 
-            let _ = self.event_tx.send(DownloadEvent::FileStarted {
+            send_event!(self.event_tx, DownloadEvent::FileStarted {
                 depot_id: self.depot_id,
                 filename,
                 total_chunks: task.chunks.len(),
@@ -76,7 +88,7 @@ impl DepotJob {
             let handle = tokio::spawn(async move {
                 let result = job.download_file(&task).await;
                 if result.is_ok() {
-                    let _ = job.event_tx.send(DownloadEvent::FileCompleted {
+                    send_event!(job.event_tx, DownloadEvent::FileCompleted {
                         depot_id: job.depot_id,
                         filename: task.filename.clone(),
                     });
@@ -90,7 +102,7 @@ impl DepotJob {
         for (handle, _) in handles {
             handle.await??;
             files_completed += 1;
-            let _ = self.event_tx.send(DownloadEvent::DepotProgress {
+            send_event!(self.event_tx, DownloadEvent::DepotProgress {
                 depot_id: self.depot_id,
                 files_completed,
                 files_total,
@@ -123,7 +135,10 @@ impl DepotJob {
         for chunk in &task.chunks {
             let chunk_id = match &chunk.id {
                 Some(id) => *id,
-                None => continue,
+                None => {
+                    tracing::warn!("Chunk in {} has no ID, skipping", task.filename);
+                    continue;
+                }
             };
 
             let job = self.clone_shared();
@@ -165,7 +180,7 @@ impl DepotJob {
                     f.write_all(&decompressed).await?;
                 }
 
-                let _ = job.event_tx.send(DownloadEvent::ChunkCompleted {
+                send_event!(job.event_tx, DownloadEvent::ChunkCompleted {
                     depot_id: job.depot_id,
                     chunk_id,
                     bytes_written,

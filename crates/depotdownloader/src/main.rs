@@ -515,11 +515,23 @@ fn discover_manifests(app_infos: &[steam::apps::AppInfo], depot_id: DepotId) -> 
 
         if let KvValue::Children(branches) = &manifests_section.value {
             for (branch_name, branch_kv) in branches {
-                let gid = branch_kv
+                let gid_str = branch_kv
                     .get("gid")
-                    .and_then(|g| g.as_str())
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .map(ManifestId);
+                    .and_then(|g| g.as_str());
+
+                let gid = match gid_str {
+                    Some(s) => match s.parse::<u64>() {
+                        Ok(id) => Some(ManifestId(id)),
+                        Err(e) => {
+                            tracing::warn!("Branch {branch_name}: failed to parse manifest ID {s:?}: {e}");
+                            None
+                        }
+                    },
+                    None => {
+                        tracing::debug!("Branch {branch_name}: no 'gid' field");
+                        None
+                    }
+                };
 
                 manifests.push(BranchManifest {
                     branch: branch_name.clone(),

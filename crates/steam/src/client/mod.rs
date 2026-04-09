@@ -227,7 +227,9 @@ impl SteamClient<Encrypted> {
                     incoming,
                 ));
             }
-            let _ = self.inner.event_tx.send(incoming);
+            if self.inner.event_tx.send(incoming).is_err() {
+                tracing::trace!("Event receiver dropped, discarding message");
+            }
         }
     }
 
@@ -456,7 +458,9 @@ async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
                 if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE {
                     if let Some(job_id) = msg.header.jobid_target {
                         if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
-                            let _ = tx.send(msg);
+                            if tx.send(msg).is_err() {
+                                tracing::warn!("Job {job_id} receiver dropped, discarding response");
+                            }
                             continue;
                         }
                     }
@@ -481,8 +485,9 @@ async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
             let sub_messages = multi::unpack_multi(&incoming.body)?;
             let mut queue = inner.msg_queue.lock().await;
             for sub in sub_messages {
-                if let Ok(parsed) = parse_incoming(Bytes::from(sub)) {
-                    queue.push_back(parsed);
+                match parse_incoming(Bytes::from(sub)) {
+                    Ok(parsed) => queue.push_back(parsed),
+                    Err(e) => tracing::warn!("Failed to parse sub-message in Multi: {e}"),
                 }
             }
             continue;
@@ -492,7 +497,9 @@ async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
         if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
             if let Some(job_id) = incoming.header.jobid_target {
                 if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
-                    let _ = tx.send(incoming);
+                    if tx.send(incoming).is_err() {
+                        tracing::warn!("Job {job_id} receiver dropped, discarding response");
+                    }
                     continue;
                 }
             }
