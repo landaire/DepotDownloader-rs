@@ -120,8 +120,28 @@ async fn do_login(
     tracing::info!("Encrypted");
 
     if let Some(ref username) = opts.auth.username {
-        tracing::info!("Authenticating as {username}...");
-        let access_token = authenticate_credentials(&client, username, opts).await?;
+        // Try stored token first
+        let token_path = steam_client::credentials::TokenStore::default_path();
+        let mut store = steam_client::credentials::TokenStore::load(&token_path);
+
+        let access_token = if let Some(stored) = store.get(username) {
+            tracing::info!("Using stored credentials for {username}");
+            stored.to_string()
+        } else {
+            tracing::info!("Authenticating as {username}...");
+            let token = authenticate_credentials(&client, username, opts).await?;
+
+            if opts.auth.remember_password {
+                store.set(username.clone(), token.clone());
+                if let Err(e) = store.save(&token_path) {
+                    tracing::warn!("Failed to save credentials: {e}");
+                } else {
+                    tracing::info!("Credentials saved for {username}");
+                }
+            }
+
+            token
+        };
 
         // Log on with the access token
         let logon = steam::generated::CMsgClientLogon {
@@ -543,6 +563,14 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
         job.download(&manifest).await?;
         drop(job); // Drop the event sender so the progress renderer sees channel close
         progress_handle.await?;
+
+        // Track installed manifest for future delta downloads
+        let config_path = steam_client::manifest::DepotConfig::path_for(&install_dir);
+        let mut depot_config = steam_client::manifest::DepotConfig::load(&config_path);
+        depot_config.set_installed(depot_id, manifest_id);
+        if let Err(e) = depot_config.save(&config_path) {
+            tracing::warn!("Failed to save depot config: {e}");
+        }
 
         tracing::info!("Depot {depot_id} download complete");
     }
