@@ -1,5 +1,8 @@
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
 
 use steam::depot::manifest::DepotManifest;
 use steam::depot::{DepotId, ManifestId};
@@ -113,5 +116,41 @@ impl ManifestCache {
 
         tracing::debug!("Cached manifest {depot_id}_{manifest_id} ({} bytes)", manifest_bytes.len());
         Ok(())
+    }
+}
+
+/// Tracks which manifest ID is currently installed per depot.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct DepotConfig {
+    pub installed_manifests: HashMap<u32, u64>,
+}
+
+impl DepotConfig {
+    pub fn path_for(install_dir: &Path) -> PathBuf {
+        install_dir.join(".depotdownloader").join("depot.json")
+    }
+
+    pub fn load(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
+            Err(_) => Self::default(),
+        }
+    }
+
+    pub fn save(&self, path: &Path) -> Result<(), std::io::Error> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        std::fs::write(path, json)
+    }
+
+    pub fn get_installed(&self, depot_id: DepotId) -> Option<ManifestId> {
+        self.installed_manifests.get(&depot_id.0).copied().map(ManifestId)
+    }
+
+    pub fn set_installed(&mut self, depot_id: DepotId, manifest_id: ManifestId) {
+        self.installed_manifests.insert(depot_id.0, manifest_id.0);
     }
 }

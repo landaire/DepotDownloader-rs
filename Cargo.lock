@@ -1966,6 +1966,8 @@ version = "0.1.0"
 dependencies = [
  "prost",
  "regex",
+ "serde",
+ "serde_json",
  "steam",
  "thiserror 2.0.18",
  "tokio",
