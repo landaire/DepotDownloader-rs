@@ -6,16 +6,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use tokio::net::TcpStream;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
-use crate::connection::CmServer;
 use crate::connection::encryption::SessionCipher;
-use crate::connection::framing;
 use crate::error::{ConnectionError, Error, ParseError};
 use crate::generated::CMsgProtoBufHeader;
 use crate::messages::header::{MsgHdr, MsgHdrProtoBuf};
 use crate::messages::{EMsg, EMSG_MASK, PROTO_MASK};
+use crate::transport::Transport;
 use crate::types::SteamId;
 
 use self::msg::ClientMsg;
@@ -30,14 +28,13 @@ pub struct LoggedIn;
 // ── Core client ──────────────────────────────────────────────
 
 struct ClientInner {
-    stream: Mutex<TcpStream>,
+    transport: Box<dyn Transport>,
     cipher: Mutex<Option<SessionCipher>>,
     steam_id: Mutex<SteamId>,
     session_id: Mutex<i32>,
     next_job_id: AtomicU64,
     pending_jobs: Mutex<HashMap<u64, oneshot::Sender<IncomingMsg>>>,
     event_tx: mpsc::UnboundedSender<IncomingMsg>,
-    /// Queue of messages unpacked from Multi payloads.
     msg_queue: Mutex<std::collections::VecDeque<IncomingMsg>>,
 }
 
@@ -70,26 +67,10 @@ impl DisconnectedClient {
         (Self { event_tx }, event_rx)
     }
 
-    pub async fn connect(self, server: &CmServer) -> Result<SteamClient<Connected>, Error> {
-        use crate::connection::CmServerAddr;
-        use tokio::net::lookup_host;
-
-        let stream = match &server.addr {
-            CmServerAddr::Resolved(addr) => TcpStream::connect(addr).await?,
-            CmServerAddr::Dns { host, port } => {
-                let addr = lookup_host(format!("{host}:{port}"))
-                    .await?
-                    .next()
-                    .ok_or_else(|| {
-                        ConnectionError::DnsResolutionFailed { host: host.clone() }
-                    })?;
-                TcpStream::connect(addr).await?
-            }
-        };
-        stream.set_nodelay(true)?;
-
+    /// Connect using any transport implementation.
+    pub fn connect(self, transport: impl Transport + 'static) -> SteamClient<Connected> {
         let inner = Arc::new(ClientInner {
-            stream: Mutex::new(stream),
+            transport: Box::new(transport),
             cipher: Mutex::new(None),
             steam_id: Mutex::new(SteamId::new(0)),
             session_id: Mutex::new(0),
@@ -99,17 +80,26 @@ impl DisconnectedClient {
             msg_queue: Mutex::new(std::collections::VecDeque::new()),
         });
 
-        Ok(SteamClient {
+        SteamClient {
             inner,
             _state: std::marker::PhantomData,
-        })
+        }
+    }
+
+    /// Connect to a CM server via TCP (convenience for the common case).
+    pub async fn connect_tcp(
+        self,
+        server: &crate::connection::CmServer,
+    ) -> Result<SteamClient<Connected>, Error> {
+        let tcp = crate::transport::tcp::TcpTransport::connect(server).await?;
+        Ok(self.connect(tcp))
     }
 }
 
 impl SteamClient<Connected> {
     /// Perform the channel encryption handshake.
     pub async fn encrypt(self) -> Result<SteamClient<Encrypted>, Error> {
-        let packet = self.recv_raw().await?;
+        let packet = self.inner.transport.recv().await?;
         let mut reader = &packet[..];
 
         let hdr = MsgHdr::parse(&mut reader).map_err(ConnectionError::Parse)?;
@@ -132,13 +122,11 @@ impl SteamClient<Connected> {
         let _protocol_version = read_u32_le(&mut reader)?;
         let _universe = read_u32_le(&mut reader)?;
 
-        // Remaining bytes are the random challenge from the server
         let challenge = reader.to_vec();
 
         let mut session_key = [0u8; 32];
         getrandom::fill(&mut session_key).expect("rng failed");
 
-        // RSA-encrypt session_key + challenge concatenated (OAEP-SHA1)
         let mut blob = Vec::with_capacity(session_key.len() + challenge.len());
         blob.extend_from_slice(&session_key);
         blob.extend_from_slice(&challenge);
@@ -152,9 +140,9 @@ impl SteamClient<Connected> {
         };
 
         let packet = build_encrypt_response(&resp_hdr, &encrypted_key);
-        self.send_raw(&packet).await?;
+        self.inner.transport.send(&packet).await?;
 
-        let result_packet = self.recv_raw().await?;
+        let result_packet = self.inner.transport.recv().await?;
         let mut reader = &result_packet[..];
 
         let result_hdr = MsgHdr::parse(&mut reader).map_err(ConnectionError::Parse)?;
@@ -180,14 +168,6 @@ impl SteamClient<Connected> {
             _state: std::marker::PhantomData,
         })
     }
-
-    async fn recv_raw(&self) -> Result<Bytes, Error> {
-        read_frame(&self.inner.stream).await
-    }
-
-    async fn send_raw(&self, payload: &[u8]) -> Result<(), Error> {
-        write_frame_to_stream(&self.inner.stream, payload).await
-    }
 }
 
 impl SteamClient<Encrypted> {
@@ -201,7 +181,6 @@ impl SteamClient<Encrypted> {
         loop {
             let incoming = self.recv_msg().await?;
             if incoming.emsg == EMsg::CLIENT_LOG_ON_RESPONSE {
-                // eresult lives in the body (CMsgClientLogonResponse), not the header
                 let body: crate::generated::CMsgClientLogonResponse =
                     prost::Message::decode(&incoming.body[..])
                         .unwrap_or_default();
@@ -244,8 +223,6 @@ impl SteamClient<Encrypted> {
     }
 
     /// Send a non-authenticated service method call and wait for the response.
-    ///
-    /// Used for auth RPCs that happen before logon (e.g., GetPasswordRSAPublicKey).
     pub async fn call_service_method_non_authed(
         &self,
         method_name: &str,
@@ -278,9 +255,8 @@ impl SteamClient<Encrypted> {
         let cipher = self.inner.cipher.lock().await;
         let cipher = cipher.as_ref().expect("cipher must be set in Encrypted state");
         let encrypted = cipher.encrypt(payload);
-        write_frame_to_stream(&self.inner.stream, &encrypted).await
+        self.inner.transport.send(&encrypted).await
     }
-
 }
 
 impl SteamClient<LoggedIn> {
@@ -337,20 +313,12 @@ impl SteamClient<LoggedIn> {
             .map_err(|_| ConnectionError::Disconnected.into())
     }
 
-    /// Receive and decrypt a message.
-    ///
-    /// Automatically unpacks Multi messages and routes service method responses.
     pub async fn recv_msg(&self) -> Result<IncomingMsg, Error> {
         recv_routed_msg(&self.inner).await
     }
 
     pub async fn send_heartbeat(&self) -> Result<(), Error> {
         let msg = ClientMsg::new(EMsg::CLIENT_HEART_BEAT);
-        self.send_msg_owned(msg).await
-    }
-
-    /// Send without needing a mutable reference (doesn't fill session fields).
-    async fn send_msg_owned(&self, msg: ClientMsg<'_>) -> Result<(), Error> {
         let mut buf = Vec::with_capacity(msg.serialized_len());
         msg.write_to(&mut buf).expect("Vec write never fails");
         self.send_encrypted(&buf).await
@@ -360,49 +328,70 @@ impl SteamClient<LoggedIn> {
         let cipher = self.inner.cipher.lock().await;
         let cipher = cipher.as_ref().expect("cipher must be set");
         let encrypted = cipher.encrypt(payload);
-        write_frame_to_stream(&self.inner.stream, &encrypted).await
+        self.inner.transport.send(&encrypted).await
     }
 }
 
-// ── I/O helpers ──────────────────────────────────────────────
+// ── Shared recv logic ────────────────────────────────────────
 
-/// Read a VT01 frame from the async stream.
-async fn read_frame(stream: &Mutex<TcpStream>) -> Result<Bytes, Error> {
-    use tokio::io::AsyncReadExt;
-
-    let mut stream = stream.lock().await;
-
-    let mut header = [0u8; 8];
-    stream.read_exact(&mut header).await?;
-
-    let len = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
-    let magic = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
-
-    if magic != framing::MAGIC {
-        return Err(ConnectionError::BadMagic {
-            expected: framing::MAGIC,
-            actual: magic,
+async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
+    loop {
+        {
+            let mut queue = inner.msg_queue.lock().await;
+            if let Some(msg) = queue.pop_front() {
+                if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE {
+                    if let Some(job_id) = msg.header.jobid_target {
+                        if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
+                            if tx.send(msg).is_err() {
+                                tracing::warn!("Job {job_id} receiver dropped, discarding response");
+                            }
+                            continue;
+                        }
+                    }
+                }
+                return Ok(msg);
+            }
         }
-        .into());
+
+        let raw = inner.transport.recv().await?;
+        let cipher = inner.cipher.lock().await;
+        let payload = match cipher.as_ref() {
+            Some(c) => Bytes::from(c.decrypt(&raw).map_err(Error::Crypto)?),
+            None => raw,
+        };
+        drop(cipher);
+
+        let incoming = parse_incoming(payload)?;
+
+        if incoming.emsg == EMsg::MULTI {
+            let sub_messages = multi::unpack_multi(&incoming.body)?;
+            let mut queue = inner.msg_queue.lock().await;
+            for sub in sub_messages {
+                match parse_incoming(Bytes::from(sub)) {
+                    Ok(parsed) => queue.push_back(parsed),
+                    Err(e) => tracing::warn!("Failed to parse sub-message in Multi: {e}"),
+                }
+            }
+            continue;
+        }
+
+        if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
+            if let Some(job_id) = incoming.header.jobid_target {
+                if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
+                    if tx.send(incoming).is_err() {
+                        tracing::warn!("Job {job_id} receiver dropped, discarding response");
+                    }
+                    continue;
+                }
+            }
+        }
+
+        return Ok(incoming);
     }
-
-    let mut payload = vec![0u8; len as usize];
-    stream.read_exact(&mut payload).await?;
-
-    Ok(Bytes::from(payload))
 }
 
-/// Write a VT01 frame to the async stream.
-async fn write_frame_to_stream(stream: &Mutex<TcpStream>, payload: &[u8]) -> Result<(), Error> {
-    use tokio::io::AsyncWriteExt;
+// ── Helpers ──────────────────────────────────────────────────
 
-    let frame = framing::frame_bytes(payload);
-    let mut stream = stream.lock().await;
-    stream.write_all(&frame).await?;
-    Ok(())
-}
-
-/// Parse a decrypted message payload into an IncomingMsg.
 fn parse_incoming(data: Bytes) -> Result<IncomingMsg, Error> {
     if data.len() < 4 {
         return Err(ConnectionError::PacketTooShort {
@@ -419,7 +408,6 @@ fn parse_incoming(data: Bytes) -> Result<IncomingMsg, Error> {
     if is_proto {
         let mut reader = &data[..];
         let hdr = MsgHdrProtoBuf::parse(&mut reader).map_err(ConnectionError::Parse)?;
-
         let proto_header: CMsgProtoBufHeader = prost::Message::decode(hdr.header_data)?;
 
         Ok(IncomingMsg {
@@ -445,71 +433,6 @@ fn parse_incoming(data: Bytes) -> Result<IncomingMsg, Error> {
     }
 }
 
-/// Read the next message from the wire, handling Multi unpacking and job routing.
-///
-/// Shared by both Encrypted and LoggedIn states.
-async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
-    loop {
-        // Drain the queue first (from previously unpacked Multi messages)
-        {
-            let mut queue = inner.msg_queue.lock().await;
-            if let Some(msg) = queue.pop_front() {
-                // Route service method responses to pending jobs
-                if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-                    if let Some(job_id) = msg.header.jobid_target {
-                        if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
-                            if tx.send(msg).is_err() {
-                                tracing::warn!("Job {job_id} receiver dropped, discarding response");
-                            }
-                            continue;
-                        }
-                    }
-                }
-                return Ok(msg);
-            }
-        }
-
-        // Read a new frame from the wire
-        let raw = read_frame(&inner.stream).await?;
-        let cipher = inner.cipher.lock().await;
-        let payload = match cipher.as_ref() {
-            Some(c) => Bytes::from(c.decrypt(&raw).map_err(Error::Crypto)?),
-            None => raw,
-        };
-        drop(cipher);
-
-        let incoming = parse_incoming(payload)?;
-
-        // If it's a Multi message, unpack and queue the inner messages
-        if incoming.emsg == EMsg::MULTI {
-            let sub_messages = multi::unpack_multi(&incoming.body)?;
-            let mut queue = inner.msg_queue.lock().await;
-            for sub in sub_messages {
-                match parse_incoming(Bytes::from(sub)) {
-                    Ok(parsed) => queue.push_back(parsed),
-                    Err(e) => tracing::warn!("Failed to parse sub-message in Multi: {e}"),
-                }
-            }
-            continue;
-        }
-
-        // Route service method responses
-        if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-            if let Some(job_id) = incoming.header.jobid_target {
-                if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
-                    if tx.send(incoming).is_err() {
-                        tracing::warn!("Job {job_id} receiver dropped, discarding response");
-                    }
-                    continue;
-                }
-            }
-        }
-
-        return Ok(incoming);
-    }
-}
-
-/// Read a little-endian u32 from a byte slice, advancing the cursor.
 fn read_u32_le(reader: &mut &[u8]) -> Result<u32, Error> {
     if reader.len() < 4 {
         return Err(ConnectionError::Parse(ParseError::UnexpectedEof).into());
@@ -519,15 +442,14 @@ fn read_u32_le(reader: &mut &[u8]) -> Result<u32, Error> {
     Ok(val)
 }
 
-/// Build the ChannelEncryptResponse packet.
 fn build_encrypt_response(hdr: &MsgHdr, encrypted_key: &[u8]) -> Vec<u8> {
     let mut packet = Vec::with_capacity(MsgHdr::SIZE + 8 + encrypted_key.len() + 8);
     hdr.write_to(&mut packet).expect("Vec write never fails");
-    packet.extend_from_slice(&1u32.to_le_bytes()); // protocol_version
-    packet.extend_from_slice(&128u32.to_le_bytes()); // key_size
+    packet.extend_from_slice(&1u32.to_le_bytes());
+    packet.extend_from_slice(&128u32.to_le_bytes());
     packet.extend_from_slice(encrypted_key);
     let crc = crate::util::checksum::Crc32::compute(encrypted_key);
     packet.extend_from_slice(&crc.0.to_le_bytes());
-    packet.extend_from_slice(&0u32.to_le_bytes()); // reserved
+    packet.extend_from_slice(&0u32.to_le_bytes());
     packet
 }

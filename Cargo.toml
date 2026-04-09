@@ -62,5 +62,9 @@ clap = { version = "4", features = ["derive"] }
 # Progress
 indicatif = "0.17"
 
+# Transport
+async-trait = "0.1"
+base64 = "0.22"
+
 # Testing
 insta = { version = "1", features = ["toml"] }

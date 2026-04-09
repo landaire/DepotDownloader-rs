@@ -23,6 +23,10 @@ pub struct Cli {
     /// Maximum concurrent downloads.
     #[arg(long, global = true, default_value = "8")]
     pub max_downloads: usize,
+
+    /// Capture incoming network packets to a JSON file for replay testing.
+    #[arg(long, global = true)]
+    pub capture: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -312,6 +316,7 @@ pub struct Options {
     pub debug: bool,
     pub cell_id: Option<u32>,
     pub max_downloads: usize,
+    pub capture: Option<String>,
 }
 
 #[derive(Debug)]
@@ -347,6 +352,7 @@ impl Options {
             debug: cli.debug,
             cell_id: cli.cell_id,
             max_downloads: cli.max_downloads,
+            capture: cli.capture,
         }
     }
 
@@ -400,6 +406,7 @@ impl Options {
             debug: cli.debug,
             cell_id: cli.cell_id,
             max_downloads: cli.max_downloads,
+            capture: None,
         }
     }
 }

@@ -9,5 +9,6 @@ pub mod depot;
 pub mod error;
 pub mod generated;
 pub mod messages;
+pub mod transport;
 pub mod types;
 pub mod util;

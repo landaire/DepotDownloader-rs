@@ -10,7 +10,6 @@ use steam::client::msg::ClientMsg;
 use steam::connection::{CmServer, fetch_cm_servers, default_cm_servers};
 use steam::depot::{AppId, CellId, DepotId, ManifestId};
 use steam::messages::EMsg;
-
 use crate::cli::{Action, Options, OutputFormat};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -47,7 +46,6 @@ async fn discover_servers(cell_id: u32) -> Vec<CmServer> {
     match fetch_cm_servers(&http, cell_id).await {
         Ok(servers) if !servers.is_empty() => {
             tracing::info!("Got {} CM servers from Steam Directory API", servers.len());
-            // Filter to TCP servers only (we don't support WebSocket yet)
             let tcp: Vec<_> = servers
                 .into_iter()
                 .filter(|s| s.protocol == steam::connection::Protocol::Tcp)
@@ -63,6 +61,8 @@ async fn discover_servers(cell_id: u32) -> Vec<CmServer> {
     default_cm_servers()
 }
 
+/// Connect, encrypt, and login. If `--capture` is set, wraps the transport
+/// with a recording layer and flushes on success.
 async fn connect_and_login(
     opts: &Options,
 ) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
@@ -73,11 +73,10 @@ async fn connect_and_login(
         return Err("No CM servers available".into());
     }
 
-    // Try servers until one works
     let mut last_err = None;
     for server in &servers {
         tracing::info!("Connecting to {:?}...", server.addr);
-        match client_connect_encrypt_login(&server, opts).await {
+        match try_connect_login(server, opts).await {
             Ok(client) => return Ok(client),
             Err(e) => {
                 tracing::warn!("Failed to connect to {:?}: {e}", server.addr);
@@ -89,13 +88,31 @@ async fn connect_and_login(
     Err(last_err.unwrap_or_else(|| "No CM servers available".into()))
 }
 
-async fn client_connect_encrypt_login(
+async fn try_connect_login(
     server: &CmServer,
     opts: &Options,
 ) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
     let (client, _events) = DisconnectedClient::new();
 
-    let client = client.connect(server).await?;
+    let client = if let Some(capture_path) = &opts.capture {
+        use steam::transport::recording::RecordingTransport;
+        use steam::transport::tcp::TcpTransport;
+
+        let tcp = TcpTransport::connect(server).await?;
+        let desc = format!("capture from {:?}", server.addr);
+        let recording = RecordingTransport::new(tcp, PathBuf::from(capture_path), desc);
+        client.connect(recording)
+    } else {
+        client.connect_tcp(server).await?
+    };
+
+    do_login(opts, client).await
+}
+
+async fn do_login(
+    opts: &Options,
+    client: steam::client::SteamClient<steam::client::Connected>,
+) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
     tracing::info!("Connected, performing encryption handshake...");
 
     let client = client.encrypt().await?;
@@ -106,7 +123,6 @@ async fn client_connect_encrypt_login(
 
     if opts.auth.username.is_none() {
         tracing::info!("Logging in anonymously...");
-        // Anonymous logon: SteamID with AccountType=AnonUser(10), Universe=Public(1)
         let anon_id = steam::types::SteamId::from_parts(1, 10, 0, 0);
         logon_msg.header.steamid = Some(anon_id.raw());
         logon_msg.header.client_sessionid = Some(0);
@@ -227,7 +243,6 @@ async fn run_depots(opts: &Options, args: &cli::DepotsArgs) -> Result<(), BoxErr
     let client = connect_and_login(opts).await?;
 
     let app_infos = get_app_info(&client, &[app_id]).await?;
-
     let depots = discover_depot_details(&app_infos);
 
     match args.format {
@@ -253,7 +268,6 @@ async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), 
     let client = connect_and_login(opts).await?;
 
     let app_infos = get_app_info(&client, &[app_id]).await?;
-
     let manifests = discover_manifests(&app_infos, depot_id);
 
     if manifests.is_empty() {
@@ -367,8 +381,7 @@ async fn run_workshop(_opts: &Options, args: &cli::WorkshopArgs) -> Result<(), B
 
 // ── Helpers ──────────────────────────────────────────────────
 
-/// Get product info for an app, handling the case where access tokens
-/// aren't available (e.g. anonymous login).
+/// Get product info for an app, handling missing access tokens.
 async fn get_app_info(
     client: &steam::client::SteamClient<steam::client::LoggedIn>,
     app_ids: &[AppId],
@@ -376,7 +389,6 @@ async fn get_app_info(
     let tokens = client.pics_get_access_tokens(app_ids).await?;
     tracing::debug!("Got {} PICS access token(s)", tokens.len());
 
-    // Build token list — use token=0 for apps we didn't get a token for
     let query: Vec<steam::apps::AccessToken> = app_ids
         .iter()
         .map(|&app_id| {
@@ -406,21 +418,6 @@ fn build_logon_body(opts: &Options) -> Vec<u8> {
     logon.encode_to_vec()
 }
 
-/// Depot info extracted from PICS KV data.
-#[derive(Debug, serde::Serialize)]
-struct DepotInfo {
-    id: DepotId,
-    name: Option<String>,
-}
-
-/// Extract depot IDs from PICS app info KV data.
-fn discover_depots(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotId> {
-    discover_depot_details(app_infos)
-        .into_iter()
-        .map(|d| d.id)
-        .collect()
-}
-
 /// Parse KV data from a PICS app info response (text or binary format).
 fn parse_app_kv(info: &steam::apps::AppInfo) -> Option<steam::types::key_value::KeyValue> {
     use steam::types::key_value::{parse_binary_kv, parse_text_kv};
@@ -444,7 +441,19 @@ fn parse_app_kv(info: &steam::apps::AppInfo) -> Option<steam::types::key_value::
     }
 }
 
-/// Extract depot IDs and names from PICS app info KV data.
+#[derive(Debug, serde::Serialize)]
+struct DepotInfo {
+    id: DepotId,
+    name: Option<String>,
+}
+
+fn discover_depots(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotId> {
+    discover_depot_details(app_infos)
+        .into_iter()
+        .map(|d| d.id)
+        .collect()
+}
+
 fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> {
     use steam::types::key_value::KvValue;
 
@@ -477,16 +486,12 @@ fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> 
     depots
 }
 
-/// Manifest info for a branch of a depot.
 #[derive(Debug, serde::Serialize)]
 struct BranchManifest {
     branch: String,
     manifest_id: Option<ManifestId>,
 }
 
-/// Extract branch → manifest ID mappings for a specific depot from PICS KV data.
-///
-/// KV structure: `root -> depots -> {depot_id} -> manifests -> {branch} -> gid`
 fn discover_manifests(app_infos: &[steam::apps::AppInfo], depot_id: DepotId) -> Vec<BranchManifest> {
     use steam::types::key_value::KvValue;
 
