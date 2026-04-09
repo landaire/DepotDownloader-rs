@@ -11,7 +11,7 @@ use steam::connection::DEFAULT_CM_SERVERS;
 use steam::depot::{AppId, CellId, DepotId, ManifestId};
 use steam::messages::EMsg;
 
-use crate::cli::{Action, Options};
+use crate::cli::{Action, Options, OutputFormat};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -32,12 +32,17 @@ async fn main() -> Result<(), BoxError> {
 
     match opts.action {
         Action::Download(ref args) => run_download(&opts, args).await,
-        Action::Manifest(ref args) => run_manifest(&opts, args).await,
+        Action::Depots(ref args) => run_depots(&opts, args).await,
+        Action::Files(ref args) => run_files(&opts, args).await,
         Action::Workshop(ref args) => run_workshop(&opts, args).await,
     }
 }
 
-async fn connect_and_login(opts: &Options) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
+// ── Shared connection helper ─────────────────────────────────
+
+async fn connect_and_login(
+    opts: &Options,
+) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
     let (client, _events) = DisconnectedClient::new();
     let server = &DEFAULT_CM_SERVERS[0];
     tracing::info!("Connecting to {}...", server.addr);
@@ -57,6 +62,8 @@ async fn connect_and_login(opts: &Options) -> Result<steam::client::SteamClient<
     Ok(client)
 }
 
+// ── download ─────────────────────────────────────────────────
+
 async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), BoxError> {
     let app_id = AppId(args.app);
     tracing::info!("Downloading app {app_id}");
@@ -65,20 +72,14 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
     let cell_id = CellId(opts.cell_id.unwrap_or(0));
 
     let tokens = client.pics_get_access_tokens(&[app_id]).await?;
-    tracing::info!("Got {} access token(s)", tokens.len());
-
     let app_infos = client.pics_get_product_info(&tokens).await?;
-    tracing::info!("Got product info for {} app(s)", app_infos.len());
 
     let cdn_servers = client.get_cdn_servers(cell_id, None).await?;
-    tracing::info!("Got {} CDN server(s)", cdn_servers.len());
-
     if cdn_servers.is_empty() {
         return Err("No CDN servers available".into());
     }
 
     let depot_ids: Vec<DepotId> = if args.depot.is_empty() {
-        tracing::info!("No specific depots requested, discovering from app info...");
         discover_depots(&app_infos)
     } else {
         args.depot.iter().map(|&id| DepotId(id)).collect()
@@ -106,7 +107,6 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
         tracing::info!("Processing depot {depot_id}...");
 
         let depot_key = client.get_depot_decryption_key(depot_id, app_id).await?;
-        tracing::info!("Got depot key for {depot_id}");
 
         let manifest_id = manifest_ids
             .get(i)
@@ -133,7 +133,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
         let manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
 
         tracing::info!(
-            "Manifest has {} files, {} total bytes",
+            "Manifest: {} files, {} bytes",
             manifest.files.len(),
             manifest.total_uncompressed_size.unwrap_or(0),
         );
@@ -163,27 +163,55 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
     Ok(())
 }
 
-async fn run_manifest(opts: &Options, args: &cli::ManifestArgs) -> Result<(), BoxError> {
+// ── depots ───────────────────────────────────────────────────
+
+async fn run_depots(opts: &Options, args: &cli::DepotsArgs) -> Result<(), BoxError> {
+    let app_id = AppId(args.app);
+    let client = connect_and_login(opts).await?;
+
+    let tokens = client.pics_get_access_tokens(&[app_id]).await?;
+    let app_infos = client.pics_get_product_info(&tokens).await?;
+
+    let depots = discover_depot_details(&app_infos);
+
+    match args.format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&depots)?);
+        }
+        OutputFormat::Table => {
+            println!("{:<12} {}", "DEPOT ID", "NAME");
+            for depot in &depots {
+                println!("{:<12} {}", depot.id.0, depot.name.as_deref().unwrap_or(""));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ── files ────────────────────────────────────────────────────
+
+async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError> {
     let app_id = AppId(args.app);
     let depot_id = DepotId(args.depot);
 
-    tracing::info!("Inspecting manifest for app {app_id} depot {depot_id}");
-
     let client = connect_and_login(opts).await?;
     let cell_id = CellId(opts.cell_id.unwrap_or(0));
+
+    let manifest_id = match args.manifest {
+        Some(id) => ManifestId(id),
+        None => {
+            return Err(
+                "Manifest ID discovery from branch not yet implemented. Pass --manifest explicitly."
+                    .into(),
+            );
+        }
+    };
 
     let cdn_servers = client.get_cdn_servers(cell_id, None).await?;
     if cdn_servers.is_empty() {
         return Err("No CDN servers available".into());
     }
-
-    // If no manifest ID given, get it from PICS
-    let manifest_id = match args.manifest {
-        Some(id) => ManifestId(id),
-        None => {
-            return Err("Manifest ID discovery from branch not yet implemented. Pass --manifest explicitly.".into());
-        }
-    };
 
     let request_code = client
         .get_manifest_request_code(app_id, depot_id, manifest_id, Some(&args.branch), None)
@@ -204,25 +232,37 @@ async fn run_manifest(opts: &Options, args: &cli::ManifestArgs) -> Result<(), Bo
 
     let manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
 
-    println!("Depot:    {depot_id}");
-    println!("Manifest: {manifest_id}");
-    if let Some(t) = manifest.creation_time {
-        println!("Created:  {t}");
-    }
-    println!("Files:    {}", manifest.files.len());
-    if let Some(size) = manifest.total_uncompressed_size {
-        println!("Size:     {size} bytes");
-    }
-    println!();
-
-    for file in &manifest.files {
-        let name = file.filename.as_deref().unwrap_or("<unnamed>");
-        let size = file.size.map(|s| format!("{s}")).unwrap_or_else(|| "?".into());
-        println!("{name}\t{size} bytes\t{} chunks", file.chunks.len());
+    match args.format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+        }
+        OutputFormat::Table => {
+            println!("Depot:    {depot_id}");
+            println!("Manifest: {manifest_id}");
+            if let Some(t) = manifest.creation_time {
+                println!("Created:  {t}");
+            }
+            if let Some(size) = manifest.total_uncompressed_size {
+                println!("Size:     {size} bytes");
+            }
+            println!("Files:    {}", manifest.files.len());
+            println!();
+            println!("{:<60} {:>12} {:>8}", "FILENAME", "SIZE", "CHUNKS");
+            for file in &manifest.files {
+                let name = file.filename.as_deref().unwrap_or("<unnamed>");
+                let size = file
+                    .size
+                    .map(|s| format!("{s}"))
+                    .unwrap_or_else(|| "?".into());
+                println!("{:<60} {:>12} {:>8}", name, size, file.chunks.len());
+            }
+        }
     }
 
     Ok(())
 }
+
+// ── workshop ─────────────────────────────────────────────────
 
 async fn run_workshop(_opts: &Options, args: &cli::WorkshopArgs) -> Result<(), BoxError> {
     if let Some(id) = args.pubfile {
@@ -234,6 +274,8 @@ async fn run_workshop(_opts: &Options, args: &cli::WorkshopArgs) -> Result<(), B
     }
     Ok(())
 }
+
+// ── Helpers ──────────────────────────────────────────────────
 
 fn build_logon_body(opts: &Options) -> Vec<u8> {
     let logon = steam::generated::CMsgClientLogon {
@@ -247,10 +289,26 @@ fn build_logon_body(opts: &Options) -> Vec<u8> {
     logon.encode_to_vec()
 }
 
-fn discover_depots(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotId> {
-    use steam::types::key_value::parse_binary_kv;
+/// Depot info extracted from PICS KV data.
+#[derive(Debug, serde::Serialize)]
+struct DepotInfo {
+    id: DepotId,
+    name: Option<String>,
+}
 
-    let mut depot_ids = Vec::new();
+/// Extract depot IDs from PICS app info KV data.
+fn discover_depots(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotId> {
+    discover_depot_details(app_infos)
+        .into_iter()
+        .map(|d| d.id)
+        .collect()
+}
+
+/// Extract depot IDs and names from PICS app info KV data.
+fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> {
+    use steam::types::key_value::{KvValue, parse_binary_kv};
+
+    let mut depots = Vec::new();
 
     for info in app_infos {
         let kv_data = match &info.kv_data {
@@ -264,19 +322,23 @@ fn discover_depots(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotId> {
             Err(_) => continue,
         };
 
-        let depots = match kv.get("depots") {
+        let depots_section = match kv.get("depots") {
             Some(d) => d,
             None => continue,
         };
 
-        if let steam::types::key_value::KvValue::Children(children) = &depots.value {
-            for key in children.keys() {
+        if let KvValue::Children(children) = &depots_section.value {
+            for (key, value) in children {
                 if let Ok(id) = key.parse::<u32>() {
-                    depot_ids.push(DepotId(id));
+                    let name = value.get("name").and_then(|n| n.as_str()).map(String::from);
+                    depots.push(DepotInfo {
+                        id: DepotId(id),
+                        name,
+                    });
                 }
             }
         }
     }
 
-    depot_ids
+    depots
 }

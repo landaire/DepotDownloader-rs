@@ -3,6 +3,10 @@ name = "steam"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+serde = ["dep:serde", "dep:serde_json"]
+
 [dependencies]
 prost.workspace = true
 reqwest.workspace = true
@@ -22,8 +26,8 @@ getrandom.workspace = true
 winnow.workspace = true
 bytes.workspace = true
 byteorder.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 tracing.workspace = true
 thiserror.workspace = true
 qrcode.workspace = true

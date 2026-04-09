@@ -347,6 +347,8 @@ dependencies = [
  "clap",
  "indicatif",
  "prost",
+ "serde",
+ "serde_json",
  "steam",
  "steam-client",
  "tokio",

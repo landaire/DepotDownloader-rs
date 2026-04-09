@@ -6,7 +6,8 @@ use std::fmt;
 macro_rules! newtype_id {
     ($(#[$meta:meta])* $name:ident, $inner:ty) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[repr(transparent)]
         pub struct $name(pub $inner);
 
@@ -59,6 +60,7 @@ newtype_id!(
 
 /// A depot content chunk identifier (SHA-1 hash).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ChunkId(pub [u8; 20]);
 
 impl fmt::Debug for ChunkId {

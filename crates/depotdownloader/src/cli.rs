@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 // ── Modern CLI (default) ─────────────────────────────────────
 
@@ -49,11 +49,24 @@ pub enum Command {
     /// Download app depot content.
     Download(DownloadArgs),
 
-    /// Inspect or dump a depot manifest.
-    Manifest(ManifestArgs),
+    /// List depots available for an app.
+    Depots(DepotsArgs),
+
+    /// List files in a depot manifest.
+    Files(FilesArgs),
 
     /// Download a Steam Workshop item.
     Workshop(WorkshopArgs),
+}
+
+/// Output format for list commands.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum OutputFormat {
+    /// Human-readable table output.
+    #[default]
+    Table,
+    /// Machine-readable JSON output.
+    Json,
 }
 
 #[derive(Debug, Parser)]
@@ -127,8 +140,21 @@ pub struct DownloadArgs {
     pub login_id: Option<u32>,
 }
 
+/// List depots available for an app.
 #[derive(Debug, Parser)]
-pub struct ManifestArgs {
+pub struct DepotsArgs {
+    /// App ID.
+    #[arg(short, long)]
+    pub app: u32,
+
+    /// Output format.
+    #[arg(short, long, value_enum, default_value_t)]
+    pub format: OutputFormat,
+}
+
+/// List files in a depot manifest.
+#[derive(Debug, Parser)]
+pub struct FilesArgs {
     /// App ID.
     #[arg(short, long)]
     pub app: u32,
@@ -144,6 +170,10 @@ pub struct ManifestArgs {
     /// Branch name.
     #[arg(short, long, default_value = "public")]
     pub branch: String,
+
+    /// Output format.
+    #[arg(short, long, value_enum, default_value_t)]
+    pub format: OutputFormat,
 }
 
 #[derive(Debug, Parser)]
@@ -268,7 +298,8 @@ pub struct Options {
 #[derive(Debug)]
 pub enum Action {
     Download(DownloadArgs),
-    Manifest(ManifestArgs),
+    Depots(DepotsArgs),
+    Files(FilesArgs),
     Workshop(WorkshopArgs),
 }
 
@@ -285,7 +316,8 @@ impl Options {
     fn from_modern(cli: Cli) -> Self {
         let action = match cli.command {
             Command::Download(args) => Action::Download(args),
-            Command::Manifest(args) => Action::Manifest(args),
+            Command::Depots(args) => Action::Depots(args),
+            Command::Files(args) => Action::Files(args),
             Command::Workshop(args) => Action::Workshop(args),
         };
         Self {
@@ -306,11 +338,12 @@ impl Options {
         };
 
         let action = if cli.manifest_only {
-            Action::Manifest(ManifestArgs {
+            Action::Files(FilesArgs {
                 app: cli.app.unwrap_or(0),
                 depot: *cli.depot.first().unwrap_or(&0),
                 manifest: cli.manifest.first().copied(),
                 branch: cli.branch,
+                format: OutputFormat::Table,
             })
         } else if cli.pubfile.is_some() || cli.ugc.is_some() {
             Action::Workshop(WorkshopArgs {

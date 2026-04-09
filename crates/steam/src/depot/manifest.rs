@@ -22,6 +22,7 @@ const EOF_MAGIC: u32 = 0x32C4_15AB;
 
 /// A parsed depot manifest.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct DepotManifest {
     pub depot_id: Option<DepotId>,
     pub manifest_id: Option<ManifestId>,
@@ -34,6 +35,7 @@ pub struct DepotManifest {
 
 /// A file entry in a depot manifest.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ManifestFile {
     pub filename: Option<String>,
     pub size: Option<u64>,
@@ -45,6 +47,7 @@ pub struct ManifestFile {
 
 /// A chunk reference within a manifest file.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ManifestChunk {
     pub id: Option<ChunkId>,
     pub checksum: Option<u32>,
