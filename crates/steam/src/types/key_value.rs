@@ -4,7 +4,9 @@
 //! tree where each node has a null-terminated key name and a value
 //! determined by the type byte.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+// Using BTreeMap instead of HashMap for deterministic iteration order,
+// which matters for serialization and snapshot testing.
 
 use winnow::binary::{le_f32, le_i32, le_i64, le_u64, le_u8};
 use winnow::error::{ContextError, ErrMode, StrContext, StrContextValue};
@@ -56,6 +58,7 @@ impl KvTag {
 
 /// A value in a KeyValue tree.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum KvValue {
     String(String),
     Int32(i32),
@@ -65,11 +68,12 @@ pub enum KvValue {
     Color(i32),
     Pointer(i32),
     /// A section containing child key-value pairs.
-    Children(HashMap<String, KeyValue>),
+    Children(BTreeMap<String, KeyValue>),
 }
 
 /// A single node in a KeyValue tree.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct KeyValue {
     pub key: String,
     pub value: KvValue,
@@ -191,8 +195,8 @@ fn parse_node(input: &mut &[u8]) -> ModalResult<KeyValue> {
 }
 
 /// Parse children until we hit an End or AltEnd tag.
-fn parse_children(input: &mut &[u8]) -> ModalResult<HashMap<String, KeyValue>> {
-    let mut children = HashMap::new();
+fn parse_children(input: &mut &[u8]) -> ModalResult<BTreeMap<String, KeyValue>> {
+    let mut children = BTreeMap::new();
     loop {
         if input.is_empty() {
             break;

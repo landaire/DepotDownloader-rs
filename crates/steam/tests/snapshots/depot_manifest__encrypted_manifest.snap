@@ -1,0 +1,409 @@
+---
+source: crates/steam/tests/depot_manifest.rs
+expression: manifest
+---
+depot_id = 440
+manifest_id = 1118032470228587934
+creation_time = 1366231164
+filenames_encrypted = true
+total_uncompressed_size = 825745
+total_compressed_size = 43168
+
+[[files]]
+filename = '''
+ke0QTBNkOl8ujYW7oYMyI3h0RYTpN+FaSk0DvQ3bBzVqbmKddipiJ2jT22F2eJFW
+'''
+size = 17
+flags = 0
+sha_content = [
+    10,
+    229,
+    203,
+    86,
+    245,
+    222,
+    118,
+    220,
+    114,
+    67,
+    180,
+    141,
+    164,
+    124,
+    194,
+    29,
+    54,
+    150,
+    206,
+    164,
+]
+
+[[files.chunks]]
+id = [
+    10,
+    229,
+    203,
+    86,
+    245,
+    222,
+    118,
+    220,
+    114,
+    67,
+    180,
+    141,
+    164,
+    124,
+    194,
+    29,
+    54,
+    150,
+    206,
+    164,
+]
+checksum = 965936594
+offset = 0
+compressed_size = 144
+uncompressed_size = 17
+
+[[files]]
+filename = '''
+O9NELSuszhPhhuG4NgsYQKfEwG2hNsUQNQWt8VMXixg=
+'''
+size = 20
+flags = 0
+sha_content = [
+    141,
+    144,
+    55,
+    192,
+    153,
+    181,
+    196,
+    71,
+    198,
+    78,
+    132,
+    73,
+    55,
+    137,
+    83,
+    151,
+    71,
+    34,
+    42,
+    187,
+]
+
+[[files.chunks]]
+id = [
+    141,
+    144,
+    55,
+    192,
+    153,
+    181,
+    196,
+    71,
+    198,
+    78,
+    132,
+    73,
+    55,
+    137,
+    83,
+    151,
+    71,
+    34,
+    42,
+    187,
+]
+checksum = 1396311711
+offset = 0
+compressed_size = 144
+uncompressed_size = 20
+
+[[files]]
+filename = '''
+OW2riML50ItTDBHQZ/PxINYS3FHMXXdHrCSf4eurKWFHNGCgiH8GQle621Vil20J
+'''
+size = 17
+flags = 0
+sha_content = [
+    148,
+    2,
+    11,
+    222,
+    20,
+    90,
+    82,
+    30,
+    222,
+    201,
+    169,
+    66,
+    78,
+    122,
+    144,
+    253,
+    4,
+    36,
+    129,
+    233,
+]
+
+[[files.chunks]]
+id = [
+    148,
+    2,
+    11,
+    222,
+    20,
+    90,
+    82,
+    30,
+    222,
+    201,
+    169,
+    66,
+    78,
+    122,
+    144,
+    253,
+    4,
+    36,
+    129,
+    233,
+]
+checksum = 963249608
+offset = 0
+compressed_size = 144
+uncompressed_size = 17
+
+[[files]]
+filename = '''
+PL7eKOEbf5k9xPpaTsip734vjmFvGPc7/7JG9u8/YZprZ2b9Bw07m4UKXeX5K39N
+'''
+size = 398709
+flags = 0
+sha_content = [
+    218,
+    243,
+    214,
+    106,
+    124,
+    134,
+    225,
+    243,
+    202,
+    193,
+    129,
+    255,
+    151,
+    1,
+    185,
+    17,
+    1,
+    126,
+    111,
+    136,
+]
+
+[[files.chunks]]
+id = [
+    218,
+    243,
+    214,
+    106,
+    124,
+    134,
+    225,
+    243,
+    202,
+    193,
+    129,
+    255,
+    151,
+    1,
+    185,
+    17,
+    1,
+    126,
+    111,
+    136,
+]
+checksum = 908046851
+offset = 0
+compressed_size = 16224
+uncompressed_size = 398709
+
+[[files]]
+filename = '''
+q2K3qc1nR80Gw5X+8jYn6vhOLEZj755F+P0aZ+lXLa3hT7KNiXpIDBHmcNVSV0vW
+'''
+size = 544
+flags = 0
+sha_content = [
+    186,
+    200,
+    226,
+    101,
+    116,
+    112,
+    178,
+    235,
+    112,
+    214,
+    221,
+    205,
+    108,
+    7,
+    0,
+    75,
+    232,
+    115,
+    134,
+    151,
+]
+
+[[files.chunks]]
+id = [
+    186,
+    200,
+    226,
+    101,
+    116,
+    112,
+    178,
+    235,
+    112,
+    214,
+    221,
+    205,
+    108,
+    7,
+    0,
+    75,
+    232,
+    115,
+    134,
+    151,
+]
+checksum = 2130218374
+offset = 0
+compressed_size = 320
+uncompressed_size = 544
+
+[[files]]
+filename = '''
+SXI+I3pZ0ifSvvQd4VfOSpdiXPH+ie/UoVsPfsMAYMqnnyR0cybS8fHf8y+sOi1P
+'''
+size = 310041
+flags = 0
+sha_content = [
+    86,
+    17,
+    162,
+    166,
+    17,
+    73,
+    30,
+    231,
+    152,
+    94,
+    120,
+    75,
+    84,
+    87,
+    156,
+    122,
+    140,
+    241,
+    145,
+    192,
+]
+
+[[files.chunks]]
+id = [
+    86,
+    17,
+    162,
+    166,
+    17,
+    73,
+    30,
+    231,
+    152,
+    94,
+    120,
+    75,
+    84,
+    87,
+    156,
+    122,
+    140,
+    241,
+    145,
+    192,
+]
+checksum = 2641123467
+offset = 0
+compressed_size = 16416
+uncompressed_size = 310041
+
+[[files]]
+filename = '''
+VOw7I/HChEkO+UJGP1xVj/tiFoenUbD9jxemjEvcL9pH7hVOFdyQjTH7Y27OFCbZ
+'''
+size = 116397
+flags = 0
+sha_content = [
+    181,
+    3,
+    45,
+    51,
+    76,
+    166,
+    6,
+    220,
+    180,
+    235,
+    133,
+    192,
+    24,
+    46,
+    166,
+    149,
+    117,
+    186,
+    145,
+    65,
+]
+
+[[files.chunks]]
+id = [
+    181,
+    3,
+    45,
+    51,
+    76,
+    166,
+    6,
+    220,
+    180,
+    235,
+    133,
+    192,
+    24,
+    46,
+    166,
+    149,
+    117,
+    186,
+    145,
+    65,
+]
+checksum = 3053236357
+offset = 0
+compressed_size = 9776
+uncompressed_size = 116397

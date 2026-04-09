@@ -472,8 +472,8 @@ fn build_encrypt_response(hdr: &MsgHdr, encrypted_key: &[u8]) -> Vec<u8> {
     packet.extend_from_slice(&1u32.to_le_bytes()); // protocol_version
     packet.extend_from_slice(&128u32.to_le_bytes()); // key_size
     packet.extend_from_slice(encrypted_key);
-    let crc = crc32fast::hash(encrypted_key);
-    packet.extend_from_slice(&crc.to_le_bytes());
+    let crc = crate::util::checksum::Crc32::compute(encrypted_key);
+    packet.extend_from_slice(&crc.0.to_le_bytes());
     packet.extend_from_slice(&0u32.to_le_bytes()); // reserved
     packet
 }

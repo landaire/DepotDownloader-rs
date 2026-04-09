@@ -11,7 +11,7 @@ use crate::error::CryptoError;
 /// Decrypts `data` in place using ECB mode with PKCS7 padding.
 /// The first 16 bytes are an ECB-encrypted IV, followed by CBC-encrypted payload.
 pub fn symmetric_decrypt_ecb(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
-    if data.len() < 16 || data.len() % 16 != 0 {
+    if data.len() < 32 {
         return Err(CryptoError::DecryptionFailed);
     }
 

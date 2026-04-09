@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = []
+default = ["serde"]
 serde = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
@@ -33,6 +33,9 @@ thiserror.workspace = true
 qrcode.workspace = true
 regex.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "sync"] }
+
+[dev-dependencies]
+insta.workspace = true
 
 [build-dependencies]
 prost-build = "0.13"

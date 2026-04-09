@@ -1,0 +1,6 @@
+---
+source: crates/steam/tests/key_value.rs
+expression: kv
+---
+key = 'empty'
+[value.Children]

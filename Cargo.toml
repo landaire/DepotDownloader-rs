@@ -61,3 +61,6 @@ clap = { version = "4", features = ["derive"] }
 
 # Progress
 indicatif = "0.17"
+
+# Testing
+insta = { version = "1", features = ["toml"] }

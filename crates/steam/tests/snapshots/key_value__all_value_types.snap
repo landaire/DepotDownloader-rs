@@ -1,0 +1,43 @@
+---
+source: crates/steam/tests/key_value.rs
+expression: kv
+---
+key = 'appinfo'
+[value.Children.appid]
+key = 'appid'
+[value.Children.appid.value]
+Int32 = 440
+[value.Children.bg_color]
+key = 'bg_color'
+[value.Children.bg_color.value]
+Color = 16711935
+[value.Children.depots]
+key = 'depots'
+[value.Children.depots.value.Children.440]
+key = '440'
+[value.Children.depots.value.Children.440.value.Children.name]
+key = 'name'
+[value.Children.depots.value.Children.440.value.Children.name.value]
+String = 'Team Fortress 2 Client'
+[value.Children.depots.value.Children.441]
+key = '441'
+[value.Children.depots.value.Children.441.value.Children.name]
+key = 'name'
+[value.Children.depots.value.Children.441.value.Children.name.value]
+String = 'Team Fortress 2 Content'
+[value.Children.name]
+key = 'name'
+[value.Children.name.value]
+String = 'Team Fortress 2'
+[value.Children.score]
+key = 'score'
+[value.Children.score.value]
+Float32 = 3.140000104904175
+[value.Children.size]
+key = 'size'
+[value.Children.size.value]
+UInt64 = 15000000000
+[value.Children.timestamp]
+key = 'timestamp'
+[value.Children.timestamp.value]
+Int64 = -1234567890
