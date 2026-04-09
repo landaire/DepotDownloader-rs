@@ -727,15 +727,80 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
 
 // ── workshop ─────────────────────────────────────────────────
 
-async fn run_workshop(_opts: &Options, args: &cli::WorkshopArgs) -> Result<(), BoxError> {
-    if let Some(id) = args.pubfile {
-        tracing::info!("Workshop pubfile download not yet implemented (id: {id})");
-    } else if let Some(id) = args.ugc {
-        tracing::info!("Workshop UGC download not yet implemented (id: {id})");
-    } else {
-        return Err("Specify --pubfile or --ugc".into());
+async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), BoxError> {
+    let pubfile_id = match (args.pubfile, args.ugc) {
+        (Some(id), _) => id,
+        (_, Some(id)) => id,
+        _ => return Err("Specify --pubfile or --ugc".into()),
+    };
+
+    let client = connect_and_login(opts).await?;
+
+    // Query published file details
+    let request = steam::generated::CPublishedFileGetDetailsRequest {
+        publishedfileids: vec![pubfile_id],
+        includechildren: Some(true),
+        ..Default::default()
+    };
+
+    let encoded = prost::Message::encode_to_vec(&request);
+    let resp = client
+        .call_service_method("PublishedFile.GetDetails#1", &encoded)
+        .await?;
+
+    let details_resp: steam::generated::CPublishedFileGetDetailsResponse =
+        prost::Message::decode(&resp.body[..])?;
+
+    let details = details_resp
+        .publishedfiledetails
+        .first()
+        .ok_or("No published file details returned")?;
+
+    let title = details.title.as_deref().unwrap_or("Unknown");
+    let app_id = details.consumer_appid.unwrap_or(0);
+    tracing::info!("Workshop item: {title} (app {app_id})");
+
+    let output = args
+        .output
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("workshop"));
+
+    // If there's a direct file URL, download via HTTP
+    if let Some(ref url) = details.file_url {
+        if !url.is_empty() {
+            let filename = details
+                .filename
+                .as_deref()
+                .unwrap_or("workshop_item");
+
+            tracing::info!("Downloading {filename} from {url}");
+            let http = reqwest::Client::new();
+            let resp = http.get(url).send().await?.error_for_status()?;
+            let bytes = resp.bytes().await?;
+
+            let out_path = output.join(filename);
+            if let Some(parent) = out_path.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+            tokio::fs::write(&out_path, &bytes).await?;
+            tracing::info!("Saved to {}", out_path.display());
+            return Ok(());
+        }
     }
-    Ok(())
+
+    // Otherwise, download via depot manifest using hcontent_file
+    if let Some(hcontent) = details.hcontent_file {
+        if hcontent > 0 {
+            tracing::info!("Downloading via depot manifest (hcontent={hcontent})");
+            // This would use the same download flow as regular depots
+            // but with the hcontent as the manifest ID
+            tracing::warn!("Workshop depot download not fully implemented yet");
+            return Ok(());
+        }
+    }
+
+    Err("Workshop item has no downloadable content".into())
 }
 
 // ── Helpers ──────────────────────────────────────────────────
