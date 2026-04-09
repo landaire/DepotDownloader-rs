@@ -1,0 +1,50 @@
+{
+  "description": "capture from Dns { host: \"205.196.6.148\", port: 27017 }",
+  "packets": [
+    {
+      "seq": 0,
+      "emsg": 1303,
+      "payload_b64": "FwUAAP////////////////////8BAAAAAQAAAJqjRI75GUIbgf2zKmCv6NU="
+    },
+    {
+      "seq": 1,
+      "emsg": 1305,
+      "payload_b64": "GQUAAP////////////////////8BAAAA"
+    },
+    {
+      "seq": 2,
+      "emsg": 121650064,
+      "payload_b64": "kDtAB4KUIOS7ddNgwwkiBeoLQ+4Pfqn9tgFSbsJF6IPRLh+LxDsnVO1n5+kFxeLOr8mek1SO+T+X7FHwGdGJGaG1OrsEzyqyxWqapAIfZ2SWQ2nbJFwXqsNSHw+xU08uGjBZBNlC4Bz1uR7SrnvOMv1V2JsK9gwMd2hEREV1C3X0Qf49YpWI7G6wc+9DauvHbaIdUUSnf/xdE9AwPSPUpue7XWIDdn23IsY2SAaQr1pLJwP126gVEr5+AdPQvHW77J8Ex1rACs1OzgiX82pPSUv+QBFr3cOseSSKhpVG5DTkka3jJMmv2Qp/hO8O5jxg"
+    },
+    {
+      "seq": 3,
+      "emsg": 806525642,
+      "payload_b64": "ypoSMFkGmNjduyXAqL3QEGxLo+kjLVaA5fCvi3DuVPFmb8htqfTdKo5Z3WQRIKoS8aDuEwyn02ykZlMsodnXt6FLDY48+SZ1w0j2wDKLZoU0NkYugsx4BacB/ETWwm1x/58q+zYMH2vIx2+lF3kBBYdnGc6Zd3ERgKQ9NaJ/XGAYdIqIYi9rl4BdI+UzDK0S"
+    },
+    {
+      "seq": 4,
+      "emsg": 603246235,
+      "payload_b64": "m870IwEWFqbysWYVo25wpdJdrB0ecD2fpEXaqkK8ZwNIG4USoz0Lyi2i01FiMo687fQVDbCvPWfcgVuqU4gaxwEageZdRzva9ZHzo/y+aiM="
+    },
+    {
+      "seq": 5,
+      "emsg": 350926521,
+      "payload_b64": "ubbqFJmkW7o+qeLLAP3QCNQVjS8NGilI/PKSkAmK8umpjGag+RLmmz5CwSTapBC8t9bNjzTDc8evU94sSUqfK3HyBoWfH2TzjNQIpDAF5qFV6Qx29aT3ADP6WV/2Jwi/65e9kq9MJMJoEKTevRvt6NaWBN8jZwgkTuw3MtrLuAHfx1l+tmaL1n/z1jljLuIqq+Zv/T3fnU8OGdnWrzGOm7s1iAFCsNIdc0N6nRl7J1eFLGLdxbD1PVFMIZNiuaWQbT/rv4zBY0G7IMyyt44DkYXY8gHIl+ogGGAFLg2QESMedxgPl/dhedJvPR40wiuTmy/qKDvSPUpgvs8sptL7dUihFLMXP0YYhxPTqgUrMut0VvI2m23uswqmVbe/0DQLh5WG/ScWfv2/edHoNzOQOhgcTBeiuxQA/WcLe6wDcQEE3xZQwB+A/rlAFZ5Dx6w0m6Qz68pdkBlLkNrFL83eFOXnSlkfyVy96JKWZcANxMoM3L0Wbyd2wHXvxmEw/ygdM+6Hw7GOQbQB0rPq4qam8bDak14PLr86VuU1S/Uuvq5mbn4ZmzwSPmOBzoU+XkGfJbACOTNgis9cCl6tOoIptVvtaXRvDWCvnonA/kpV7OBuPtBNRm4gyc9IJ0ywVJfDAs/1ncatKOkuaDKG2FLghj1ZkcBxGWTJ4APD4UlUcKAL70xZX9zm72bCHFpbISNqFk0+w+zXpzN0Dv9cDrGKgMrBvs9rRzY6EaLbhdjUWTXwxokmH3bpz+Vdu+cHujjJT3a8HttFlNJr1u7DoZtGIY8SUeN+v3ajjC/WUCGnOuAo4l0w0klahnW0xD3NsYQmus47hq4AvgyIN8b1LKoL0bF/QwtPydCVDS8+hpHUSGxDQv/c8RL/ILU/qrvyAj+cSP38ylIEtC3gtb0HLfzglVJ7Vh5NqP76HZGePJRFxEF8BA3qj5axy4Om1YLGBxRXvKxBdK7asplCojzj0Hllhuj2SYOxHy+mqI5IX8DFI1x4oyu7s5XcHFxKSYUXseIHOp7UD2OYbkrUTJgSd0TZUe1zFstMsPMGulbROFxxiCGPFcO73PnyG/auKEUFYVJrL92jH7x3h24Aptq4ijxhI5uTufw0/u8aJiTRV7YqTNXoQwDeYYsYSQzmgUtOjkNPgXGqGe3oJjHhXv7hBlFa5TpyKvcTY6ZewBGP++ioV+ydaetsVjh7ud0odWhAaEaa+LCc6mS0Gj49mssaydDPyGDhgfzOOGMTvaQWkxhS0+365pNff83hbPqp7gXyOBDbqxRlLYCgDVh/OXd9daKu17KGDkFxghsB74vqtjTaJtVnSYLs00EY6ftzo6057ZhD2/fJofpJeFCqqPHEPUiXCQPDGgrqzZaN8Sczf/t6G4TCvb8s+aH/6bh6NVJJiJd8BPlNsPZC3dJiZXDLKrv5/iYqJmQslTnLtGbTD6rdpnGr5Il85z5JwGQPUUtgDpwSS92ZfzAR54SEfhaBXeLPmsg1eecFdUPKSLKO5273S9jS/kt1/NGESWtpNWnvD40hignG4JKxajBDD+n2Zc3mZAYydpPSPRkJ/e+BYZJfuLxSDgA4piv/qxDelZYVm+4lwB6MrtORAfOQs1gZFB/ulKW5Cur4f9DyrMDmGYZIpo0JWksLJNSovxOf2+3KvydAr94bfqpyA5gs+86QourdEDTVwqChPGSp4QYSypKmgXdHOyyXlQBSw0c5pHZVkedINArR2hBc5vCX9NDxTQ1WLCREIjCRT11fd15qh5VbkdY="
+    },
+    {
+      "seq": 6,
+      "emsg": 772123404,
+      "payload_b64": "DKsFLttUCrd8120tQHA+nhTzgBU4vmpEabrNTkq6e2F2955TQl8BQNTN5yo+3UYGY7HQAedQWGcywDh3AB5YcGYS9SQ/BKIs6zm5ITS87m40jr5q/RKCQiAoV6WjmP9tGacMmhZidLYyOZkin5egEbOoGAFkoeJAyqwcAv0u6zcFdOf9jx8ZpLU9we8T7rdu8EWiBTEW7FfxQGOBaeiPfOu3hiRKnpySCXIQtbPaijboosPrrtwxBVlegvMlnjOKXrIZefRVi4dIsMc8xY+SD+dfLsGWf/TM1ddRozqG2G/4FKqzZU48dXszDP+Cgca/LiY0D3K+/h8pD/uaVBDW9lQvTgJzVvVZc4vyGycZ+rJVbBJ70E1A+vX1r+e3PRBQLre24xm5G8TI0L9TtL15WLG4G/Y91Oav6oOmXEdj4RxEjarCZHGmL2hAtQnCT1DN4mNckLglZvxRcBS1JQoYZZ6tEKZVgUuxre5pn8F8IfttPfnxcFHib8jdTDTrhRJ/q38ovQk35jBUDplxw9yNLYNHiebn5CjIPYTqJpz7QzqjMEMyoQ8vhdaz1O6vtUj6aqp/9JqnoXkg1hqPU1LGNZdnJrzgP6LJsvt0x+J8HdWvHo6NtrdAfpWHpTwNet3VpF5uueWxXxsgg0E6JUPQNO+MEFBxOK2BGjZtVl5JdbE/yEdOjTTbYjVnfhe2R4Mj"
+    },
+    {
+      "seq": 7,
+      "emsg": 1627069600,
+      "payload_b64": "oBz7YAQh4tkxTloC+t4QJtaVjk7F0Kiwzg7kvdxhQvVO7orOyfiobmZWK3sytOsPx6YhcbGdIH4CHBTJTjxok0UrTWmIIDam2X1e/Vs2b1m7AIuRDfMLmwj3uFczc6NjwStybDFk9o0OWs8+4xtsvKJxIqAfY+gdlKLZn75i6C2nzCT02TVs/QDHZmgnUAs6"
+    },
+    {
+      "seq": 8,
+      "emsg": 1743846983,
+      "payload_b64": "R/7w58vAh9BsFgOHSARuPkrTho3K2jsi+paMxOwU1j7JK8Xkwm+psBogpGaXpkEPGpSuDmkFtcEJJYhH+5S6tC22kau0/PXvsL/DDlGj2KE9bqcP1H9K/YNHaidgmp8yYpLw+veuVIIFM58hVyg+e1k4FHVSlfPJqZuWfW/LdyM="
+    }
+  ]
+}

@@ -50,17 +50,17 @@ pub struct AuthOptions {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Download app depot content.
-    Download(DownloadArgs),
+    /// Show app info: branches, depots, and their manifests.
+    Info(InfoArgs),
 
-    /// List depots available for an app.
-    Depots(DepotsArgs),
-
-    /// List available manifests (branches) for a depot.
+    /// List all depot manifests for a given branch.
     Manifests(ManifestsArgs),
 
     /// List files in a depot manifest.
     Files(FilesArgs),
+
+    /// Download app depot content.
+    Download(DownloadArgs),
 
     /// Download a Steam Workshop item.
     Workshop(WorkshopArgs),
@@ -147,9 +147,9 @@ pub struct DownloadArgs {
     pub login_id: Option<u32>,
 }
 
-/// List depots available for an app.
+/// Show app overview: branches, depots, and their manifests.
 #[derive(Debug, Parser)]
-pub struct DepotsArgs {
+pub struct InfoArgs {
     /// App ID.
     #[arg(short, long)]
     pub app: u32,
@@ -159,16 +159,21 @@ pub struct DepotsArgs {
     pub format: OutputFormat,
 }
 
-/// List available manifests (branches) for a depot.
+
+/// List all depot manifests for a branch.
 #[derive(Debug, Parser)]
 pub struct ManifestsArgs {
     /// App ID.
     #[arg(short, long)]
     pub app: u32,
 
-    /// Depot ID.
+    /// Branch name.
+    #[arg(short, long, default_value = "public")]
+    pub branch: String,
+
+    /// Filter to a specific depot ID.
     #[arg(short, long)]
-    pub depot: u32,
+    pub depot: Option<u32>,
 
     /// Output format.
     #[arg(short, long, value_enum, default_value_t)]
@@ -197,6 +202,10 @@ pub struct FilesArgs {
     /// Output format.
     #[arg(short, long, value_enum, default_value_t)]
     pub format: OutputFormat,
+
+    /// Show raw encrypted filenames without decrypting.
+    #[arg(long)]
+    pub raw: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -321,10 +330,10 @@ pub struct Options {
 
 #[derive(Debug)]
 pub enum Action {
-    Download(DownloadArgs),
-    Depots(DepotsArgs),
+    Info(InfoArgs),
     Manifests(ManifestsArgs),
     Files(FilesArgs),
+    Download(DownloadArgs),
     Workshop(WorkshopArgs),
 }
 
@@ -340,10 +349,10 @@ impl Options {
 
     fn from_modern(cli: Cli) -> Self {
         let action = match cli.command {
-            Command::Download(args) => Action::Download(args),
-            Command::Depots(args) => Action::Depots(args),
+            Command::Info(args) => Action::Info(args),
             Command::Manifests(args) => Action::Manifests(args),
             Command::Files(args) => Action::Files(args),
+            Command::Download(args) => Action::Download(args),
             Command::Workshop(args) => Action::Workshop(args),
         };
         Self {
@@ -371,6 +380,7 @@ impl Options {
                 manifest: cli.manifest.first().copied(),
                 branch: cli.branch,
                 format: OutputFormat::Table,
+                raw: false,
             })
         } else if cli.pubfile.is_some() || cli.ugc.is_some() {
             Action::Workshop(WorkshopArgs {

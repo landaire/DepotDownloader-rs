@@ -43,6 +43,9 @@ pub enum ConnectionError {
     #[error("logon failed: EResult={eresult}")]
     LogonFailed { eresult: i32 },
 
+    #[error("access denied for depot {depot_id}: EResult={eresult}")]
+    DepotAccessDenied { depot_id: u32, eresult: i32 },
+
     #[error("parse error: {0}")]
     Parse(#[from] ParseError),
 

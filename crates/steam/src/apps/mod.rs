@@ -142,7 +142,8 @@ impl SteamClient<LoggedIn> {
 
                 let eresult = body.eresult;
                 if eresult != Some(1) {
-                    return Err(ConnectionError::LogonFailed {
+                    return Err(ConnectionError::DepotAccessDenied {
+                        depot_id: depot_id.0,
                         eresult: eresult.unwrap_or(0),
                     }
                     .into());

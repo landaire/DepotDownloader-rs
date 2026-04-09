@@ -122,3 +122,50 @@ fn decrypted_manifest_matches_expected_metadata() {
     assert_eq!(chunk.compressed_size, Some(144));
     assert_eq!(chunk.uncompressed_size, Some(17));
 }
+
+#[test]
+fn decrypt_handles_base64_with_embedded_newlines() {
+    // Steam stores encrypted filenames as line-wrapped base64 (newlines at ~64 chars).
+    // The TF2 fixture contains filenames with embedded newlines from the proto.
+    let data = load("depot_440_1118032470228587934.manifest");
+    let manifest = DepotManifest::parse(&data).expect("should parse");
+    assert!(manifest.filenames_encrypted);
+
+    // Verify some filenames actually contain newlines (Steam's line wrapping)
+    let has_newlines = manifest.files.iter().any(|f| {
+        f.filename.as_deref().is_some_and(|n| n.contains('\n'))
+    });
+    assert!(has_newlines, "TF2 fixture should contain filenames with embedded newlines");
+
+    // Decryption should succeed despite the newlines
+    let mut decrypted = manifest.clone();
+    decrypted.decrypt_filenames(&DEPOT_440_KEY).expect("should decrypt despite newlines");
+
+    // All filenames should now be clean paths with no newlines
+    for file in &decrypted.files {
+        let name = file.filename.as_deref().unwrap();
+        assert!(
+            !name.contains('\n') && !name.contains('\r'),
+            "decrypted filename should not contain newlines: {name:?}"
+        );
+    }
+
+    // Should produce the known filenames
+    let names: Vec<&str> = decrypted.files.iter()
+        .filter_map(|f| f.filename.as_deref())
+        .collect();
+    assert!(names.contains(&"bin/dxsupport.cfg"));
+    assert!(names.contains(&"tf/media/startupvids.txt"));
+}
+
+#[test]
+fn decrypt_fails_on_corrupt_base64() {
+    let data = load("depot_440_1118032470228587934.manifest");
+    let mut manifest = DepotManifest::parse(&data).expect("should parse");
+
+    // Corrupt the first filename
+    manifest.files[0].filename = Some("!!!not-valid-base64!!!".to_string());
+
+    let result = manifest.decrypt_filenames(&DEPOT_440_KEY);
+    assert!(result.is_err(), "should fail on corrupt base64");
+}

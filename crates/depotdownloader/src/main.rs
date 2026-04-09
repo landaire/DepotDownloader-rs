@@ -31,10 +31,10 @@ async fn main() -> Result<(), BoxError> {
         .init();
 
     match opts.action {
-        Action::Download(ref args) => run_download(&opts, args).await,
-        Action::Depots(ref args) => run_depots(&opts, args).await,
+        Action::Info(ref args) => run_info(&opts, args).await,
         Action::Manifests(ref args) => run_manifests(&opts, args).await,
         Action::Files(ref args) => run_files(&opts, args).await,
+        Action::Download(ref args) => run_download(&opts, args).await,
         Action::Workshop(ref args) => run_workshop(&opts, args).await,
     }
 }
@@ -137,6 +137,122 @@ async fn do_login(
     Ok(client)
 }
 
+// ── info ─────────────────────────────────────────────────────
+
+async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), BoxError> {
+    let app_id = AppId(args.app);
+    let client = connect_and_login(opts).await?;
+
+    let app_infos = get_app_info(&client, &[app_id]).await?;
+    let branches = discover_branches(&app_infos);
+    let depots = discover_depot_details(&app_infos);
+
+    #[derive(serde::Serialize)]
+    struct AppOverview {
+        app_id: AppId,
+        branches: Vec<BranchOverview>,
+        depots: Vec<DepotOverview>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct BranchOverview {
+        name: String,
+        build_id: Option<u32>,
+        time_updated: Option<u64>,
+        password_required: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        manifests: Vec<DepotManifestEntry>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct DepotOverview {
+        id: DepotId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        os_list: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        os_arch: Option<String>,
+    }
+
+    let overview = AppOverview {
+        app_id,
+        branches: branches
+            .iter()
+            .map(|b| BranchOverview {
+                name: b.name.clone(),
+                build_id: b.build_id,
+                time_updated: b.time_updated,
+                password_required: b.password_required,
+                description: b.description.clone(),
+                manifests: discover_manifests_for_branch(&app_infos, &b.name, None),
+            })
+            .collect(),
+        depots: depots
+            .iter()
+            .map(|d| DepotOverview {
+                id: d.id,
+                name: d.name.clone(),
+                os_list: d.os_list.clone(),
+                os_arch: d.os_arch.clone(),
+            })
+            .collect(),
+    };
+
+    match args.format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&overview)?);
+        }
+        OutputFormat::Table => {
+            println!("App {app_id}");
+            println!();
+
+            println!("Branches:");
+            println!("  {:<20} {:>10} {:>14} {}", "NAME", "BUILD", "UPDATED", "FLAGS");
+            for b in &overview.branches {
+                let flags = if b.password_required { "[password]" } else { "" };
+                println!(
+                    "  {:<20} {:>10} {:>14} {}",
+                    b.name,
+                    b.build_id.map(|id| id.to_string()).unwrap_or_else(|| "—".into()),
+                    b.time_updated.map(|t| t.to_string()).unwrap_or_else(|| "—".into()),
+                    flags,
+                );
+            }
+            println!();
+
+            println!("Depots:");
+            println!("  {:<12} {:<30} {:<20} {}", "ID", "NAME", "OS", "ARCH");
+            for d in &overview.depots {
+                println!(
+                    "  {:<12} {:<30} {:<20} {}",
+                    d.id.0,
+                    d.name.as_deref().unwrap_or(""),
+                    d.os_list.as_deref().unwrap_or(""),
+                    d.os_arch.as_deref().unwrap_or(""),
+                );
+            }
+            println!();
+
+            for b in &overview.branches {
+                if !b.manifests.is_empty() {
+                    println!("Manifests for branch '{}':", b.name);
+                    for m in &b.manifests {
+                        println!(
+                            "  depot {:<10} → {}",
+                            m.depot_id.0,
+                            m.manifest_id.map(|id| id.0.to_string()).unwrap_or_else(|| "—".into()),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // ── download ─────────────────────────────────────────────────
 
 async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), BoxError> {
@@ -196,11 +312,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             Some(&id) => id,
             None => {
                 // Auto-discover from PICS, with fallback to "public" branch
-                let manifests = discover_manifests(&app_infos, depot_id);
-                let found = manifests
-                    .iter()
-                    .find(|m| m.branch == args.branch)
-                    .and_then(|m| m.manifest_id);
+                let found = discover_manifest_id(&app_infos, depot_id, &args.branch);
 
                 match found {
                     Some(id) => id,
@@ -209,10 +321,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
                             "Branch '{}' not found for depot {depot_id}, trying 'public'",
                             args.branch
                         );
-                        manifests
-                            .iter()
-                            .find(|m| m.branch == "public")
-                            .and_then(|m| m.manifest_id)
+                        discover_manifest_id(&app_infos, depot_id, "public")
                             .ok_or_else(|| -> BoxError {
                                 format!("No manifest for depot {depot_id} on any branch").into()
                             })?
@@ -285,55 +394,32 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
     Ok(())
 }
 
-// ── depots ───────────────────────────────────────────────────
-
-async fn run_depots(opts: &Options, args: &cli::DepotsArgs) -> Result<(), BoxError> {
-    let app_id = AppId(args.app);
-    let client = connect_and_login(opts).await?;
-
-    let app_infos = get_app_info(&client, &[app_id]).await?;
-    let depots = discover_depot_details(&app_infos);
-
-    match args.format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&depots)?);
-        }
-        OutputFormat::Table => {
-            println!("{:<12} {}", "DEPOT ID", "NAME");
-            for depot in &depots {
-                println!("{:<12} {}", depot.id.0, depot.name.as_deref().unwrap_or(""));
-            }
-        }
-    }
-
-    Ok(())
-}
-
 // ── manifests ────────────────────────────────────────────────
 
 async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), BoxError> {
     let app_id = AppId(args.app);
-    let depot_id = DepotId(args.depot);
     let client = connect_and_login(opts).await?;
 
     let app_infos = get_app_info(&client, &[app_id]).await?;
-    let manifests = discover_manifests(&app_infos, depot_id);
+    let depot_filter = args.depot.map(DepotId);
+    let entries = discover_manifests_for_branch(&app_infos, &args.branch, depot_filter);
 
-    if manifests.is_empty() {
-        return Err(format!("No manifests found for depot {depot_id}").into());
+    if entries.is_empty() {
+        return Err(format!("No manifests found on branch '{}'", args.branch).into());
     }
 
     match args.format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&manifests)?);
+            println!("{}", serde_json::to_string_pretty(&entries)?);
         }
         OutputFormat::Table => {
-            println!("{:<20} {:>20}", "BRANCH", "MANIFEST ID");
-            for m in &manifests {
+            println!("{:<12} {:<30} {:>22}", "DEPOT", "NAME", "MANIFEST ID");
+            for e in &entries {
                 println!(
-                    "{:<20} {:>20}",
-                    m.branch,
-                    m.manifest_id.map(|id| id.0.to_string()).unwrap_or_else(|| "?".into()),
+                    "{:<12} {:<30} {:>22}",
+                    e.depot_id.0,
+                    e.depot_name.as_deref().unwrap_or(""),
+                    e.manifest_id.map(|id| id.0.to_string()).unwrap_or_else(|| "—".into()),
                 );
             }
         }
@@ -356,11 +442,7 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
         None => {
             // Auto-discover manifest ID from branch via PICS
             let app_infos = get_app_info(&client, &[app_id]).await?;
-            let manifests = discover_manifests(&app_infos, depot_id);
-            manifests
-                .iter()
-                .find(|m| m.branch == args.branch)
-                .and_then(|m| m.manifest_id)
+            discover_manifest_id(&app_infos, depot_id, &args.branch)
                 .ok_or_else(|| -> BoxError {
                     format!(
                         "No manifest found for depot {depot_id} on branch '{}'",
@@ -394,16 +476,15 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
 
     let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
 
-    // Decrypt filenames if encrypted
-    if manifest.filenames_encrypted {
+    // Decrypt filenames unless --raw was requested
+    if manifest.filenames_encrypted && !args.raw {
         match client.get_depot_decryption_key(depot_id, app_id).await {
             Ok(key) => {
                 manifest.decrypt_filenames(&key)?;
-                tracing::info!("Decrypted {} filenames", manifest.files.len());
             }
             Err(e) => {
                 tracing::warn!("Could not get depot key for filename decryption: {e}");
-                tracing::warn!("Filenames will be shown in encrypted form");
+                tracing::warn!("Use --raw to suppress this warning");
             }
         }
     }
@@ -422,6 +503,9 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
                 println!("Size:     {size} bytes");
             }
             println!("Files:    {}", manifest.files.len());
+            if manifest.filenames_encrypted {
+                println!("NOTE:     filenames are encrypted (use authenticated login or --raw)");
+            }
             println!();
             println!("{:<60} {:>12} {:>8}", "FILENAME", "SIZE", "CHUNKS");
             for file in &manifest.files {
@@ -623,17 +707,35 @@ fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> 
     depots
 }
 
+/// Branch metadata from PICS KV data.
 #[derive(Debug, serde::Serialize)]
-struct BranchManifest {
-    branch: String,
-    manifest_id: Option<ManifestId>,
+struct BranchInfo {
+    name: String,
+    build_id: Option<u32>,
+    time_updated: Option<u64>,
+    password_required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
 }
 
-fn discover_manifests(app_infos: &[steam::apps::AppInfo], depot_id: DepotId) -> Vec<BranchManifest> {
+/// A depot's manifest on a specific branch.
+#[derive(Debug, serde::Serialize)]
+struct DepotManifestEntry {
+    depot_id: DepotId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    depot_name: Option<String>,
+    manifest_id: Option<ManifestId>,
+    /// True if this manifest ID came from the `encryptedmanifests` section
+    /// (requires a branch password to access).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    encrypted: bool,
+}
+
+/// Discover branches from the `depots → branches` section of PICS KV.
+fn discover_branches(app_infos: &[steam::apps::AppInfo]) -> Vec<BranchInfo> {
     use steam::types::key_value::KvValue;
 
-    let mut manifests = Vec::new();
-    let depot_key = depot_id.0.to_string();
+    let mut branches = Vec::new();
 
     for info in app_infos {
         let kv = match parse_app_kv(info) {
@@ -641,47 +743,122 @@ fn discover_manifests(app_infos: &[steam::apps::AppInfo], depot_id: DepotId) -> 
             None => continue,
         };
 
-        let depot = kv
+        let branches_section = kv
             .get("depots")
-            .and_then(|d| d.get(&depot_key));
+            .and_then(|d| d.get("branches"));
 
-        let depot = match depot {
-            Some(d) => d,
+        let branches_section = match branches_section {
+            Some(b) => b,
             None => continue,
         };
 
-        let manifests_section = match depot.get("manifests") {
-            Some(m) => m,
-            None => continue,
-        };
+        if let KvValue::Children(children) = &branches_section.value {
+            for (name, branch_kv) in children {
+                let str_field = |key: &str| branch_kv.get(key).and_then(|n| n.as_str());
+                let u32_field = |key: &str| str_field(key).and_then(|s| s.parse::<u32>().ok());
+                let u64_field = |key: &str| str_field(key).and_then(|s| s.parse::<u64>().ok());
 
-        if let KvValue::Children(branches) = &manifests_section.value {
-            for (branch_name, branch_kv) in branches {
-                let gid_str = branch_kv
-                    .get("gid")
-                    .and_then(|g| g.as_str());
-
-                let gid = match gid_str {
-                    Some(s) => match s.parse::<u64>() {
-                        Ok(id) => Some(ManifestId(id)),
-                        Err(e) => {
-                            tracing::warn!("Branch {branch_name}: failed to parse manifest ID {s:?}: {e}");
-                            None
-                        }
-                    },
-                    None => {
-                        tracing::debug!("Branch {branch_name}: no 'gid' field");
-                        None
-                    }
-                };
-
-                manifests.push(BranchManifest {
-                    branch: branch_name.clone(),
-                    manifest_id: gid,
+                branches.push(BranchInfo {
+                    name: name.clone(),
+                    build_id: u32_field("buildid"),
+                    time_updated: u64_field("timeupdated"),
+                    password_required: str_field("pwdrequired")
+                        .is_some_and(|v| v == "1" || v == "true"),
+                    description: str_field("description").map(String::from),
                 });
             }
         }
     }
 
-    manifests
+    branches
+}
+
+/// List all depot manifests for a specific branch.
+fn discover_manifests_for_branch(
+    app_infos: &[steam::apps::AppInfo],
+    branch: &str,
+    depot_filter: Option<DepotId>,
+) -> Vec<DepotManifestEntry> {
+    use steam::types::key_value::KvValue;
+
+    let mut entries = Vec::new();
+
+    for info in app_infos {
+        let kv = match parse_app_kv(info) {
+            Some(kv) => kv,
+            None => continue,
+        };
+
+        let depots_section = match kv.get("depots") {
+            Some(d) => d,
+            None => continue,
+        };
+
+        if let KvValue::Children(children) = &depots_section.value {
+            for (key, depot_kv) in children {
+                let depot_id = match key.parse::<u32>() {
+                    Ok(id) => DepotId(id),
+                    Err(_) => continue, // skip non-numeric keys like "branches"
+                };
+
+                if let Some(filter) = depot_filter {
+                    if depot_id != filter {
+                        continue;
+                    }
+                }
+
+                let depot_name = depot_kv
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .map(String::from);
+
+                // Check public manifests first, then encrypted manifests
+                let manifest_id = depot_kv
+                    .get("manifests")
+                    .and_then(|m| m.get(branch))
+                    .and_then(|b| b.get("gid"))
+                    .and_then(|g| g.as_str())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(ManifestId);
+
+                let encrypted_manifest_id = if manifest_id.is_none() {
+                    depot_kv
+                        .get("encryptedmanifests")
+                        .and_then(|m| m.get(branch))
+                        .and_then(|b| b.get("gid"))
+                        .and_then(|g| g.as_str())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map(ManifestId)
+                } else {
+                    None
+                };
+
+                let (resolved_id, encrypted) = match (manifest_id, encrypted_manifest_id) {
+                    (Some(id), _) => (Some(id), false),
+                    (None, Some(id)) => (Some(id), true),
+                    (None, None) => (None, false),
+                };
+
+                entries.push(DepotManifestEntry {
+                    depot_id,
+                    depot_name,
+                    manifest_id: resolved_id,
+                    encrypted,
+                });
+            }
+        }
+    }
+
+    entries
+}
+
+/// Legacy helper: discover manifest ID for a specific depot on a branch.
+fn discover_manifest_id(
+    app_infos: &[steam::apps::AppInfo],
+    depot_id: DepotId,
+    branch: &str,
+) -> Option<ManifestId> {
+    discover_manifests_for_branch(app_infos, branch, Some(depot_id))
+        .into_iter()
+        .find_map(|e| e.manifest_id)
 }

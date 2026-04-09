@@ -28,6 +28,7 @@ fn all_captures() -> Vec<(&'static str, CaptureFile)> {
         "manifests_223350_223351.json",
         "files_480_481.json",
         "files_223350_223351.json",
+        "files_1874900_1874901.json",
     ];
     names
         .iter()
@@ -104,10 +105,10 @@ fn all_captures_have_valid_encrypt_result() {
 #[test]
 fn all_captures_have_consistent_structure() {
     for (name, capture) in all_captures() {
-        assert_eq!(
-            capture.packets.len(),
-            6,
-            "{name}: expected 6 packets"
+        assert!(
+            capture.packets.len() >= 4,
+            "{name}: expected at least 4 packets (handshake + logon), got {}",
+            capture.packets.len()
         );
 
         // Packet sequence numbers should be monotonic
@@ -122,12 +123,12 @@ fn all_captures_have_consistent_structure() {
         assert_eq!(capture.packets[0].emsg, Some(1303), "{name}: pkt0 = EncryptRequest");
         assert_eq!(capture.packets[1].emsg, Some(1305), "{name}: pkt1 = EncryptResult");
 
-        // Encrypted packets should have non-zero payloads
-        for i in 2..6 {
+        // All packets after the handshake should have non-zero payloads
+        for i in 2..capture.packets.len() {
             let payload = capture.packets[i].decode_payload().unwrap();
             assert!(
                 !payload.is_empty(),
-                "{name}: encrypted packet {i} is empty"
+                "{name}: packet {i} is empty"
             );
         }
     }

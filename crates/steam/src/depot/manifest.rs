@@ -74,8 +74,8 @@ impl DepotManifest {
                 match decrypt_filename(encrypted, key) {
                     Ok(decrypted) => file.filename = Some(decrypted),
                     Err(e) => {
-                        tracing::warn!("Failed to decrypt filename: {e}");
-                        // Leave encrypted name in place
+                        tracing::error!("Failed to decrypt filename {encrypted:?}: {e}");
+                        return Err(e);
                     }
                 }
             }
@@ -344,8 +344,10 @@ fn decrypt_filename(encrypted_b64: &str, key: &DepotKey) -> Result<String, Manif
     use aes::cipher::{BlockDecrypt, KeyInit, block_padding::Pkcs7};
     use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 
+    // Strip all whitespace — encrypted filenames may contain line breaks
+    let cleaned: String = encrypted_b64.chars().filter(|c| !c.is_whitespace()).collect();
     let encrypted = base64::engine::general_purpose::STANDARD
-        .decode(encrypted_b64.trim())
+        .decode(&cleaned)
         .map_err(|_| ManifestError::MissingSection("invalid base64 in filename"))?;
 
     if encrypted.len() < 32 {
