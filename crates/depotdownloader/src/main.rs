@@ -99,10 +99,20 @@ async fn client_connect_encrypt_login(
     tracing::info!("Connected, performing encryption handshake...");
 
     let client = client.encrypt().await?;
-    tracing::info!("Encrypted, logging in...");
+    tracing::info!("Encrypted");
 
     let logon_body = build_logon_body(opts);
-    let logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+    let mut logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+
+    if opts.auth.username.is_none() {
+        tracing::info!("Logging in anonymously...");
+        // Anonymous logon: SteamID with AccountType=AnonUser(10), Universe=Public(1)
+        let anon_id = steam::types::SteamId::from_parts(1, 10, 0, 0);
+        logon_msg.header.steamid = Some(anon_id.raw());
+        logon_msg.header.client_sessionid = Some(0);
+    } else {
+        tracing::info!("Logging in as {}...", opts.auth.username.as_deref().unwrap());
+    }
 
     let (client, _logon_resp) = client.login(logon_msg).await?;
     tracing::info!("Logged in successfully");
