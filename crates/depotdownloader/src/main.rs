@@ -13,6 +13,36 @@ use steam::depot::{AppId, CellId, DepotId, ManifestId};
 use steam::messages::EMsg;
 use crate::cli::{Action, Options, OutputFormat};
 
+fn fmt_size(bytes: u64, raw: bool) -> String {
+    if raw {
+        return bytes.to_string();
+    }
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    const GIB: u64 = 1024 * MIB;
+    if bytes >= GIB {
+        format!("{:.2} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.2} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.2} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn fmt_timestamp(unix: u32) -> String {
+    jiff::Timestamp::from_second(unix as i64)
+        .map(|ts| ts.strftime("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|_| unix.to_string())
+}
+
+fn fmt_timestamp_u64(unix: u64) -> String {
+    jiff::Timestamp::from_second(unix as i64)
+        .map(|ts| ts.strftime("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|_| unix.to_string())
+}
+
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
@@ -363,14 +393,15 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), BoxError> 
             println!();
 
             println!("Branches:");
-            println!("  {:<20} {:>10} {:>14} {}", "NAME", "BUILD", "UPDATED", "FLAGS");
+            println!("  {:<20} {:>10} {:>22} {}", "NAME", "BUILD", "UPDATED", "FLAGS");
             for b in &overview.branches {
                 let flags = if b.password_required { "[password]" } else { "" };
+                let updated = b.time_updated.map(fmt_timestamp_u64).unwrap_or_default();
                 println!(
-                    "  {:<20} {:>10} {:>14} {}",
+                    "  {:<20} {:>10} {:>22} {}",
                     b.name,
-                    b.build_id.map(|id| id.to_string()).unwrap_or_else(|| "—".into()),
-                    b.time_updated.map(|t| t.to_string()).unwrap_or_else(|| "—".into()),
+                    b.build_id.map(|id| id.to_string()).unwrap_or_default(),
+                    updated,
                     flags,
                 );
             }
@@ -525,9 +556,11 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
         }
 
         tracing::info!(
-            "Manifest: {} files, {} bytes",
+            "Manifest: {} files, {}",
             manifest.files.len(),
-            manifest.total_uncompressed_size.unwrap_or(0),
+            manifest.total_uncompressed_size
+                .map(|s| fmt_size(s, opts.raw_bytes))
+                .unwrap_or_else(|| "unknown size".into()),
         );
 
         let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -695,10 +728,10 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
             println!("Depot:    {depot_id}");
             println!("Manifest: {manifest_id}");
             if let Some(t) = manifest.creation_time {
-                println!("Created:  {t}");
+                println!("Created:  {}", fmt_timestamp(t));
             }
             if let Some(size) = manifest.total_uncompressed_size {
-                println!("Size:     {size} bytes");
+                println!("Size:     {}", fmt_size(size, opts.raw_bytes));
             }
             println!("Files:    {}", manifest.files.len());
             if manifest.filenames_encrypted {
@@ -710,7 +743,7 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
                 let name = file.filename.as_deref().unwrap_or("<unnamed>");
                 let size = file
                     .size
-                    .map(|s| format!("{s}"))
+                    .map(|s| fmt_size(s, opts.raw_bytes))
                     .unwrap_or_else(|| "?".into());
                 println!("{:<60} {:>12} {:>8}", name, size, file.chunks.len());
             }

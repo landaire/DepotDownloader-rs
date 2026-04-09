@@ -66,5 +66,8 @@ indicatif = "0.17"
 async-trait = "0.1"
 base64 = "0.22"
 
+# Time
+jiff = "0.2"
+
 # Testing
 insta = { version = "1", features = ["toml"] }

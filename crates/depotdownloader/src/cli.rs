@@ -26,6 +26,10 @@ pub struct Cli {
     /// Capture incoming network packets to a JSON file for replay testing.
     #[arg(long, global = true)]
     pub capture: Option<String>,
+
+    /// Show raw byte sizes instead of human-readable (KiB, MiB, GiB).
+    #[arg(long, global = true)]
+    pub bytes: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -323,6 +327,7 @@ pub struct Options {
     pub cell_id: Option<u32>,
     pub max_downloads: usize,
     pub capture: Option<String>,
+    pub raw_bytes: bool,
 }
 
 #[derive(Debug)]
@@ -359,6 +364,7 @@ impl Options {
             cell_id: cli.cell_id,
             max_downloads: cli.max_downloads,
             capture: cli.capture,
+            raw_bytes: cli.bytes,
         }
     }
 
@@ -414,6 +420,7 @@ impl Options {
             cell_id: cli.cell_id,
             max_downloads: cli.max_downloads,
             capture: None,
+            raw_bytes: false,
         }
     }
 }
