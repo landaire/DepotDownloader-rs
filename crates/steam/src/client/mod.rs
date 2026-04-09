@@ -37,6 +37,8 @@ struct ClientInner {
     next_job_id: AtomicU64,
     pending_jobs: Mutex<HashMap<u64, oneshot::Sender<IncomingMsg>>>,
     event_tx: mpsc::UnboundedSender<IncomingMsg>,
+    /// Queue of messages unpacked from Multi payloads.
+    msg_queue: Mutex<std::collections::VecDeque<IncomingMsg>>,
 }
 
 /// A received message from the CM server.
@@ -94,6 +96,7 @@ impl DisconnectedClient {
             next_job_id: AtomicU64::new(1),
             pending_jobs: Mutex::new(HashMap::new()),
             event_tx: self.event_tx,
+            msg_queue: Mutex::new(std::collections::VecDeque::new()),
         });
 
         Ok(SteamClient {
@@ -198,7 +201,13 @@ impl SteamClient<Encrypted> {
         loop {
             let incoming = self.recv_msg().await?;
             if incoming.emsg == EMsg::CLIENT_LOG_ON_RESPONSE {
-                let eresult = incoming.header.eresult.unwrap_or(0);
+                // eresult lives in the body (CMsgClientLogonResponse), not the header
+                let body: crate::generated::CMsgClientLogonResponse =
+                    prost::Message::decode(&incoming.body[..])
+                        .unwrap_or_default();
+                let eresult = body.eresult
+                    .or(incoming.header.eresult)
+                    .unwrap_or(0);
                 if eresult != 1 {
                     return Err(ConnectionError::LogonFailed { eresult }.into());
                 }
@@ -229,21 +238,7 @@ impl SteamClient<Encrypted> {
     }
 
     pub async fn recv_msg(&self) -> Result<IncomingMsg, Error> {
-        loop {
-            let payload = self.recv_encrypted().await?;
-            let incoming = parse_incoming(payload)?;
-
-            if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-                if let Some(job_id) = incoming.header.jobid_target {
-                    if let Some(tx) = self.inner.pending_jobs.lock().await.remove(&job_id) {
-                        let _ = tx.send(incoming);
-                        continue;
-                    }
-                }
-            }
-
-            return Ok(incoming);
-        }
+        recv_routed_msg(&self.inner).await
     }
 
     /// Send a non-authenticated service method call and wait for the response.
@@ -284,13 +279,6 @@ impl SteamClient<Encrypted> {
         write_frame_to_stream(&self.inner.stream, &encrypted).await
     }
 
-    async fn recv_encrypted(&self) -> Result<Bytes, Error> {
-        let raw = read_frame(&self.inner.stream).await?;
-        let cipher = self.inner.cipher.lock().await;
-        let cipher = cipher.as_ref().expect("cipher must be set in Encrypted state");
-        let decrypted = cipher.decrypt(&raw).map_err(Error::Crypto)?;
-        Ok(Bytes::from(decrypted))
-    }
 }
 
 impl SteamClient<LoggedIn> {
@@ -349,23 +337,9 @@ impl SteamClient<LoggedIn> {
 
     /// Receive and decrypt a message.
     ///
-    /// Automatically routes service method responses to pending job waiters.
+    /// Automatically unpacks Multi messages and routes service method responses.
     pub async fn recv_msg(&self) -> Result<IncomingMsg, Error> {
-        loop {
-            let payload = self.recv_encrypted().await?;
-            let incoming = parse_incoming(payload)?;
-
-            if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-                if let Some(job_id) = incoming.header.jobid_target {
-                    if let Some(tx) = self.inner.pending_jobs.lock().await.remove(&job_id) {
-                        let _ = tx.send(incoming);
-                        continue;
-                    }
-                }
-            }
-
-            return Ok(incoming);
-        }
+        recv_routed_msg(&self.inner).await
     }
 
     pub async fn send_heartbeat(&self) -> Result<(), Error> {
@@ -385,14 +359,6 @@ impl SteamClient<LoggedIn> {
         let cipher = cipher.as_ref().expect("cipher must be set");
         let encrypted = cipher.encrypt(payload);
         write_frame_to_stream(&self.inner.stream, &encrypted).await
-    }
-
-    async fn recv_encrypted(&self) -> Result<Bytes, Error> {
-        let raw = read_frame(&self.inner.stream).await?;
-        let cipher = self.inner.cipher.lock().await;
-        let cipher = cipher.as_ref().expect("cipher must be set");
-        let decrypted = cipher.decrypt(&raw).map_err(Error::Crypto)?;
-        Ok(Bytes::from(decrypted))
     }
 }
 
@@ -474,6 +440,65 @@ fn parse_incoming(data: Bytes) -> Result<IncomingMsg, Error> {
             header: CMsgProtoBufHeader::default(),
             body: data.slice(MsgHdr::SIZE..),
         })
+    }
+}
+
+/// Read the next message from the wire, handling Multi unpacking and job routing.
+///
+/// Shared by both Encrypted and LoggedIn states.
+async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
+    loop {
+        // Drain the queue first (from previously unpacked Multi messages)
+        {
+            let mut queue = inner.msg_queue.lock().await;
+            if let Some(msg) = queue.pop_front() {
+                // Route service method responses to pending jobs
+                if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE {
+                    if let Some(job_id) = msg.header.jobid_target {
+                        if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
+                            let _ = tx.send(msg);
+                            continue;
+                        }
+                    }
+                }
+                return Ok(msg);
+            }
+        }
+
+        // Read a new frame from the wire
+        let raw = read_frame(&inner.stream).await?;
+        let cipher = inner.cipher.lock().await;
+        let payload = match cipher.as_ref() {
+            Some(c) => Bytes::from(c.decrypt(&raw).map_err(Error::Crypto)?),
+            None => raw,
+        };
+        drop(cipher);
+
+        let incoming = parse_incoming(payload)?;
+
+        // If it's a Multi message, unpack and queue the inner messages
+        if incoming.emsg == EMsg::MULTI {
+            let sub_messages = multi::unpack_multi(&incoming.body)?;
+            let mut queue = inner.msg_queue.lock().await;
+            for sub in sub_messages {
+                if let Ok(parsed) = parse_incoming(Bytes::from(sub)) {
+                    queue.push_back(parsed);
+                }
+            }
+            continue;
+        }
+
+        // Route service method responses
+        if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
+            if let Some(job_id) = incoming.header.jobid_target {
+                if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
+                    let _ = tx.send(incoming);
+                    continue;
+                }
+            }
+        }
+
+        return Ok(incoming);
     }
 }
 

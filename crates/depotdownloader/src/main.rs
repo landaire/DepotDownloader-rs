@@ -129,8 +129,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
     let client = connect_and_login(opts).await?;
     let cell_id = CellId(opts.cell_id.unwrap_or(0));
 
-    let tokens = client.pics_get_access_tokens(&[app_id]).await?;
-    let app_infos = client.pics_get_product_info(&tokens).await?;
+    let app_infos = get_app_info(&client, &[app_id]).await?;
 
     let cdn_servers = client.get_cdn_servers(cell_id, None).await?;
     if cdn_servers.is_empty() {
@@ -227,8 +226,7 @@ async fn run_depots(opts: &Options, args: &cli::DepotsArgs) -> Result<(), BoxErr
     let app_id = AppId(args.app);
     let client = connect_and_login(opts).await?;
 
-    let tokens = client.pics_get_access_tokens(&[app_id]).await?;
-    let app_infos = client.pics_get_product_info(&tokens).await?;
+    let app_infos = get_app_info(&client, &[app_id]).await?;
 
     let depots = discover_depot_details(&app_infos);
 
@@ -254,8 +252,7 @@ async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), 
     let depot_id = DepotId(args.depot);
     let client = connect_and_login(opts).await?;
 
-    let tokens = client.pics_get_access_tokens(&[app_id]).await?;
-    let app_infos = client.pics_get_product_info(&tokens).await?;
+    let app_infos = get_app_info(&client, &[app_id]).await?;
 
     let manifests = discover_manifests(&app_infos, depot_id);
 
@@ -370,6 +367,33 @@ async fn run_workshop(_opts: &Options, args: &cli::WorkshopArgs) -> Result<(), B
 
 // ── Helpers ──────────────────────────────────────────────────
 
+/// Get product info for an app, handling the case where access tokens
+/// aren't available (e.g. anonymous login).
+async fn get_app_info(
+    client: &steam::client::SteamClient<steam::client::LoggedIn>,
+    app_ids: &[AppId],
+) -> Result<Vec<steam::apps::AppInfo>, BoxError> {
+    let tokens = client.pics_get_access_tokens(app_ids).await?;
+    tracing::debug!("Got {} PICS access token(s)", tokens.len());
+
+    // Build token list — use token=0 for apps we didn't get a token for
+    let query: Vec<steam::apps::AccessToken> = app_ids
+        .iter()
+        .map(|&app_id| {
+            let token = tokens
+                .iter()
+                .find(|t| t.app_id == app_id)
+                .map(|t| t.token)
+                .unwrap_or(0);
+            steam::apps::AccessToken { app_id, token }
+        })
+        .collect();
+
+    let infos = client.pics_get_product_info(&query).await?;
+    tracing::debug!("Got product info for {} app(s)", infos.len());
+    Ok(infos)
+}
+
 fn build_logon_body(opts: &Options) -> Vec<u8> {
     let logon = steam::generated::CMsgClientLogon {
         protocol_version: Some(65581),
@@ -397,22 +421,39 @@ fn discover_depots(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotId> {
         .collect()
 }
 
+/// Parse KV data from a PICS app info response (text or binary format).
+fn parse_app_kv(info: &steam::apps::AppInfo) -> Option<steam::types::key_value::KeyValue> {
+    use steam::types::key_value::{parse_binary_kv, parse_text_kv};
+
+    let kv_data = info.kv_data.as_ref()?;
+
+    if let Ok(text) = std::str::from_utf8(kv_data) {
+        match parse_text_kv(text) {
+            Ok(kv) => return Some(kv),
+            Err(e) => tracing::debug!("Failed to parse text KV: {e}"),
+        }
+    }
+
+    let mut input = kv_data.as_slice();
+    match parse_binary_kv(&mut input) {
+        Ok(kv) => Some(kv),
+        Err(e) => {
+            tracing::debug!("Failed to parse binary KV: {e}");
+            None
+        }
+    }
+}
+
 /// Extract depot IDs and names from PICS app info KV data.
 fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> {
-    use steam::types::key_value::{KvValue, parse_binary_kv};
+    use steam::types::key_value::KvValue;
 
     let mut depots = Vec::new();
 
     for info in app_infos {
-        let kv_data = match &info.kv_data {
-            Some(data) => data,
+        let kv = match parse_app_kv(info) {
+            Some(kv) => kv,
             None => continue,
-        };
-
-        let mut input = kv_data.as_slice();
-        let kv = match parse_binary_kv(&mut input) {
-            Ok(kv) => kv,
-            Err(_) => continue,
         };
 
         let depots_section = match kv.get("depots") {
@@ -447,21 +488,15 @@ struct BranchManifest {
 ///
 /// KV structure: `root -> depots -> {depot_id} -> manifests -> {branch} -> gid`
 fn discover_manifests(app_infos: &[steam::apps::AppInfo], depot_id: DepotId) -> Vec<BranchManifest> {
-    use steam::types::key_value::{KvValue, parse_binary_kv};
+    use steam::types::key_value::KvValue;
 
     let mut manifests = Vec::new();
     let depot_key = depot_id.0.to_string();
 
     for info in app_infos {
-        let kv_data = match &info.kv_data {
-            Some(data) => data,
+        let kv = match parse_app_kv(info) {
+            Some(kv) => kv,
             None => continue,
-        };
-
-        let mut input = kv_data.as_slice();
-        let kv = match parse_binary_kv(&mut input) {
-            Ok(kv) => kv,
-            Err(_) => continue,
         };
 
         let depot = kv

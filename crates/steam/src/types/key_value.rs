@@ -223,6 +223,126 @@ fn parse_null_string(input: &mut &[u8]) -> ModalResult<String> {
     Ok(String::from_utf8_lossy(bytes).into_owned())
 }
 
+// ── Text KV parser ───────────────────────────────────────────
+
+/// Parse a text-format KeyValue string (used by PICS app info responses).
+///
+/// Format:
+/// ```text
+/// "key"
+/// {
+///     "child_key"     "string_value"
+///     "section_key"
+///     {
+///         ...
+///     }
+/// }
+/// ```
+pub fn parse_text_kv(input: &str) -> Result<KeyValue, TextKvError> {
+    let mut chars = input.trim();
+    parse_text_node(&mut chars)
+}
+
+/// Errors from text KV parsing.
+#[derive(Debug, thiserror::Error)]
+pub enum TextKvError {
+    #[error("unexpected end of input")]
+    UnexpectedEof,
+    #[error("expected '\"' to start a quoted string")]
+    ExpectedQuote,
+    #[error("expected '{{' to open a section")]
+    ExpectedOpenBrace,
+}
+
+fn parse_text_node(input: &mut &str) -> Result<KeyValue, TextKvError> {
+    skip_whitespace_and_comments(input);
+    let key = parse_quoted_string(input)?;
+    skip_whitespace_and_comments(input);
+
+    if input.starts_with('{') {
+        *input = &input[1..];
+        let children = parse_text_children(input)?;
+        Ok(KeyValue {
+            key,
+            value: KvValue::Children(children),
+        })
+    } else if input.starts_with('"') {
+        let value = parse_quoted_string(input)?;
+        Ok(KeyValue {
+            key,
+            value: KvValue::String(value),
+        })
+    } else {
+        Err(TextKvError::UnexpectedEof)
+    }
+}
+
+fn parse_text_children(input: &mut &str) -> Result<BTreeMap<String, KeyValue>, TextKvError> {
+    let mut children = BTreeMap::new();
+    loop {
+        skip_whitespace_and_comments(input);
+        if input.is_empty() {
+            break;
+        }
+        if input.starts_with('}') {
+            *input = &input[1..];
+            break;
+        }
+        let node = parse_text_node(input)?;
+        children.insert(node.key.clone(), node);
+    }
+    Ok(children)
+}
+
+fn parse_quoted_string(input: &mut &str) -> Result<String, TextKvError> {
+    skip_whitespace_and_comments(input);
+    if !input.starts_with('"') {
+        return Err(TextKvError::ExpectedQuote);
+    }
+    *input = &input[1..]; // skip opening quote
+
+    let mut result = String::new();
+    let mut chars = input.chars();
+    loop {
+        match chars.next() {
+            Some('"') => break,
+            Some('\\') => {
+                match chars.next() {
+                    Some('n') => result.push('\n'),
+                    Some('t') => result.push('\t'),
+                    Some('\\') => result.push('\\'),
+                    Some('"') => result.push('"'),
+                    Some(c) => {
+                        result.push('\\');
+                        result.push(c);
+                    }
+                    None => return Err(TextKvError::UnexpectedEof),
+                }
+            }
+            Some(c) => result.push(c),
+            None => return Err(TextKvError::UnexpectedEof),
+        }
+    }
+    *input = chars.as_str();
+    Ok(result)
+}
+
+fn skip_whitespace_and_comments(input: &mut &str) {
+    loop {
+        *input = input.trim_start();
+        if input.starts_with("//") {
+            // Skip to end of line
+            if let Some(idx) = input.find('\n') {
+                *input = &input[idx + 1..];
+            } else {
+                *input = "";
+            }
+        } else {
+            break;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

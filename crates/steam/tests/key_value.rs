@@ -1,6 +1,6 @@
 //! Snapshot tests for Valve's binary KeyValue format parser.
 
-use steam::types::key_value::{KvTag, KvValue, parse_binary_kv};
+use steam::types::key_value::{KvTag, parse_binary_kv};
 
 /// Build a KV with various value types for comprehensive snapshot coverage.
 fn make_all_types_kv() -> Vec<u8> {
