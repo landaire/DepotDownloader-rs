@@ -69,7 +69,21 @@ impl DisconnectedClient {
     }
 
     pub async fn connect(self, server: &CmServer) -> Result<SteamClient<Connected>, Error> {
-        let stream = TcpStream::connect(server.addr).await?;
+        use crate::connection::CmServerAddr;
+        use tokio::net::lookup_host;
+
+        let stream = match &server.addr {
+            CmServerAddr::Resolved(addr) => TcpStream::connect(addr).await?,
+            CmServerAddr::Dns { host, port } => {
+                let addr = lookup_host(format!("{host}:{port}"))
+                    .await?
+                    .next()
+                    .ok_or_else(|| {
+                        ConnectionError::DnsResolutionFailed { host: host.clone() }
+                    })?;
+                TcpStream::connect(addr).await?
+            }
+        };
         stream.set_nodelay(true)?;
 
         let inner = Arc::new(ClientInner {
@@ -115,10 +129,18 @@ impl SteamClient<Connected> {
         let _protocol_version = read_u32_le(&mut reader)?;
         let _universe = read_u32_le(&mut reader)?;
 
+        // Remaining bytes are the random challenge from the server
+        let challenge = reader.to_vec();
+
         let mut session_key = [0u8; 32];
         getrandom::fill(&mut session_key).expect("rng failed");
 
-        let encrypted_key = crate::crypto::rsa::encrypt_with_steam_public_key(&session_key)?;
+        // RSA-encrypt session_key + challenge concatenated (OAEP-SHA1)
+        let mut blob = Vec::with_capacity(session_key.len() + challenge.len());
+        blob.extend_from_slice(&session_key);
+        blob.extend_from_slice(&challenge);
+
+        let encrypted_key = crate::crypto::rsa::encrypt_with_steam_public_key(&blob)?;
 
         let resp_hdr = MsgHdr {
             emsg: EMsg::CHANNEL_ENCRYPT_RESPONSE,

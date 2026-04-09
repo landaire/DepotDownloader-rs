@@ -52,6 +52,9 @@ pub enum Command {
     /// List depots available for an app.
     Depots(DepotsArgs),
 
+    /// List available manifests (branches) for a depot.
+    Manifests(ManifestsArgs),
+
     /// List files in a depot manifest.
     Files(FilesArgs),
 
@@ -146,6 +149,22 @@ pub struct DepotsArgs {
     /// App ID.
     #[arg(short, long)]
     pub app: u32,
+
+    /// Output format.
+    #[arg(short, long, value_enum, default_value_t)]
+    pub format: OutputFormat,
+}
+
+/// List available manifests (branches) for a depot.
+#[derive(Debug, Parser)]
+pub struct ManifestsArgs {
+    /// App ID.
+    #[arg(short, long)]
+    pub app: u32,
+
+    /// Depot ID.
+    #[arg(short, long)]
+    pub depot: u32,
 
     /// Output format.
     #[arg(short, long, value_enum, default_value_t)]
@@ -299,6 +318,7 @@ pub struct Options {
 pub enum Action {
     Download(DownloadArgs),
     Depots(DepotsArgs),
+    Manifests(ManifestsArgs),
     Files(FilesArgs),
     Workshop(WorkshopArgs),
 }
@@ -317,6 +337,7 @@ impl Options {
         let action = match cli.command {
             Command::Download(args) => Action::Download(args),
             Command::Depots(args) => Action::Depots(args),
+            Command::Manifests(args) => Action::Manifests(args),
             Command::Files(args) => Action::Files(args),
             Command::Workshop(args) => Action::Workshop(args),
         };

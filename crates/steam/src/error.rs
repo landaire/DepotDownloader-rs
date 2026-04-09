@@ -34,6 +34,9 @@ pub enum ConnectionError {
     #[error("packet too short: need {need} bytes, got {got}")]
     PacketTooShort { need: usize, got: usize },
 
+    #[error("DNS resolution failed for {host}")]
+    DnsResolutionFailed { host: String },
+
     #[error("encryption handshake failed: EResult={eresult}")]
     EncryptionFailed { eresult: u32 },
 

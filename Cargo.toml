@@ -12,7 +12,7 @@ license = "MIT"
 prost = "0.13"
 
 # HTTP
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 # Compression (pure Rust backends)
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

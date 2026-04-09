@@ -1,4 +1,5 @@
-use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs8::DecodePublicKey};
+use rsa::{Oaep, RsaPublicKey, pkcs8::DecodePublicKey};
+use sha1::Sha1;
 
 use crate::error::CryptoError;
 
@@ -20,14 +21,17 @@ const STEAM_PUBLIC_KEY_DER: &[u8] = &[
     0x28, 0xE0, 0xE7, 0x14, 0xC0, 0x42, 0x89, 0x02, 0x01, 0x11,
 ];
 
-/// Encrypt data with Valve's Steam public RSA key (PKCS#1 v1.5).
+/// Encrypt data with Valve's Steam public RSA key (OAEP-SHA1).
+///
+/// SteamKit2 uses `RSAEncryptionPadding.OaepSHA1` for the encryption handshake.
 pub fn encrypt_with_steam_public_key(data: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let public_key = RsaPublicKey::from_public_key_der(STEAM_PUBLIC_KEY_DER)
         .map_err(|e| CryptoError::Rsa(rsa::Error::Pkcs8(e.into())))?;
 
+    let padding = Oaep::new::<Sha1>();
     let mut rng = rsa::rand_core::OsRng;
     let encrypted = public_key
-        .encrypt(&mut rng, Pkcs1v15Encrypt, data)
+        .encrypt(&mut rng, padding, data)
         .map_err(CryptoError::Rsa)?;
 
     Ok(encrypted)
@@ -39,11 +43,11 @@ mod tests {
 
     #[test]
     fn encrypt_produces_output() {
-        let data = [0x42u8; 32];
+        // session_key (32) + challenge (16) = 48 bytes, fits in RSA-1024 OAEP-SHA1
+        let data = [0x42u8; 48];
         let encrypted = encrypt_with_steam_public_key(&data).unwrap();
         // RSA 1024-bit key produces 128 bytes output
         assert_eq!(encrypted.len(), 128);
-        // Output should differ from input
-        assert_ne!(&encrypted[..32], &data);
+        assert_ne!(&encrypted[..48], &data);
     }
 }

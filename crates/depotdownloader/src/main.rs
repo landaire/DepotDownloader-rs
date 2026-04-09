@@ -7,7 +7,7 @@ use prost::Message;
 
 use steam::client::DisconnectedClient;
 use steam::client::msg::ClientMsg;
-use steam::connection::DEFAULT_CM_SERVERS;
+use steam::connection::{CmServer, fetch_cm_servers, default_cm_servers};
 use steam::depot::{AppId, CellId, DepotId, ManifestId};
 use steam::messages::EMsg;
 
@@ -33,6 +33,7 @@ async fn main() -> Result<(), BoxError> {
     match opts.action {
         Action::Download(ref args) => run_download(&opts, args).await,
         Action::Depots(ref args) => run_depots(&opts, args).await,
+        Action::Manifests(ref args) => run_manifests(&opts, args).await,
         Action::Files(ref args) => run_files(&opts, args).await,
         Action::Workshop(ref args) => run_workshop(&opts, args).await,
     }
@@ -40,12 +41,59 @@ async fn main() -> Result<(), BoxError> {
 
 // ── Shared connection helper ─────────────────────────────────
 
+async fn discover_servers(cell_id: u32) -> Vec<CmServer> {
+    let http = reqwest::Client::new();
+
+    match fetch_cm_servers(&http, cell_id).await {
+        Ok(servers) if !servers.is_empty() => {
+            tracing::info!("Got {} CM servers from Steam Directory API", servers.len());
+            // Filter to TCP servers only (we don't support WebSocket yet)
+            let tcp: Vec<_> = servers
+                .into_iter()
+                .filter(|s| s.protocol == steam::connection::Protocol::Tcp)
+                .collect();
+            if !tcp.is_empty() {
+                return tcp;
+            }
+        }
+        Ok(_) => tracing::warn!("Steam Directory returned no servers, using defaults"),
+        Err(e) => tracing::warn!("Steam Directory API failed: {e}, using defaults"),
+    }
+
+    default_cm_servers()
+}
+
 async fn connect_and_login(
     opts: &Options,
 ) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
+    let cell_id = opts.cell_id.unwrap_or(0);
+    let servers = discover_servers(cell_id).await;
+
+    if servers.is_empty() {
+        return Err("No CM servers available".into());
+    }
+
+    // Try servers until one works
+    let mut last_err = None;
+    for server in &servers {
+        tracing::info!("Connecting to {:?}...", server.addr);
+        match client_connect_encrypt_login(&server, opts).await {
+            Ok(client) => return Ok(client),
+            Err(e) => {
+                tracing::warn!("Failed to connect to {:?}: {e}", server.addr);
+                last_err = Some(e);
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| "No CM servers available".into()))
+}
+
+async fn client_connect_encrypt_login(
+    server: &CmServer,
+    opts: &Options,
+) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
     let (client, _events) = DisconnectedClient::new();
-    let server = &DEFAULT_CM_SERVERS[0];
-    tracing::info!("Connecting to {}...", server.addr);
 
     let client = client.connect(server).await?;
     tracing::info!("Connected, performing encryption handshake...");
@@ -182,6 +230,41 @@ async fn run_depots(opts: &Options, args: &cli::DepotsArgs) -> Result<(), BoxErr
             println!("{:<12} {}", "DEPOT ID", "NAME");
             for depot in &depots {
                 println!("{:<12} {}", depot.id.0, depot.name.as_deref().unwrap_or(""));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ── manifests ────────────────────────────────────────────────
+
+async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), BoxError> {
+    let app_id = AppId(args.app);
+    let depot_id = DepotId(args.depot);
+    let client = connect_and_login(opts).await?;
+
+    let tokens = client.pics_get_access_tokens(&[app_id]).await?;
+    let app_infos = client.pics_get_product_info(&tokens).await?;
+
+    let manifests = discover_manifests(&app_infos, depot_id);
+
+    if manifests.is_empty() {
+        return Err(format!("No manifests found for depot {depot_id}").into());
+    }
+
+    match args.format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&manifests)?);
+        }
+        OutputFormat::Table => {
+            println!("{:<20} {:>20}", "BRANCH", "MANIFEST ID");
+            for m in &manifests {
+                println!(
+                    "{:<20} {:>20}",
+                    m.branch,
+                    m.manifest_id.map(|id| id.0.to_string()).unwrap_or_else(|| "?".into()),
+                );
             }
         }
     }
@@ -341,4 +424,65 @@ fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> 
     }
 
     depots
+}
+
+/// Manifest info for a branch of a depot.
+#[derive(Debug, serde::Serialize)]
+struct BranchManifest {
+    branch: String,
+    manifest_id: Option<ManifestId>,
+}
+
+/// Extract branch → manifest ID mappings for a specific depot from PICS KV data.
+///
+/// KV structure: `root -> depots -> {depot_id} -> manifests -> {branch} -> gid`
+fn discover_manifests(app_infos: &[steam::apps::AppInfo], depot_id: DepotId) -> Vec<BranchManifest> {
+    use steam::types::key_value::{KvValue, parse_binary_kv};
+
+    let mut manifests = Vec::new();
+    let depot_key = depot_id.0.to_string();
+
+    for info in app_infos {
+        let kv_data = match &info.kv_data {
+            Some(data) => data,
+            None => continue,
+        };
+
+        let mut input = kv_data.as_slice();
+        let kv = match parse_binary_kv(&mut input) {
+            Ok(kv) => kv,
+            Err(_) => continue,
+        };
+
+        let depot = kv
+            .get("depots")
+            .and_then(|d| d.get(&depot_key));
+
+        let depot = match depot {
+            Some(d) => d,
+            None => continue,
+        };
+
+        let manifests_section = match depot.get("manifests") {
+            Some(m) => m,
+            None => continue,
+        };
+
+        if let KvValue::Children(branches) = &manifests_section.value {
+            for (branch_name, branch_kv) in branches {
+                let gid = branch_kv
+                    .get("gid")
+                    .and_then(|g| g.as_str())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(ManifestId);
+
+                manifests.push(BranchManifest {
+                    branch: branch_name.clone(),
+                    manifest_id: gid,
+                });
+            }
+        }
+    }
+
+    manifests
 }
