@@ -366,12 +366,15 @@ dependencies = [
 name = "depotdownloader"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "clap",
  "indicatif",
  "prost",
  "reqwest",
+ "rsa",
  "serde",
  "serde_json",
+ "sha1",
  "steam",
  "steam-client",
  "tokio",
@@ -1962,6 +1965,7 @@ name = "steam-client"
 version = "0.1.0"
 dependencies = [
  "prost",
+ "regex",
  "steam",
  "thiserror 2.0.18",
  "tokio",

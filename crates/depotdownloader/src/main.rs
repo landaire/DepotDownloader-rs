@@ -119,23 +119,159 @@ async fn do_login(
     let client = client.encrypt().await?;
     tracing::info!("Encrypted");
 
-    let logon_body = build_logon_body(opts);
-    let mut logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+    if let Some(ref username) = opts.auth.username {
+        tracing::info!("Authenticating as {username}...");
+        let access_token = authenticate_credentials(&client, username, opts).await?;
 
-    if opts.auth.username.is_none() {
+        // Log on with the access token
+        let logon = steam::generated::CMsgClientLogon {
+            protocol_version: Some(65581),
+            cell_id: Some(opts.cell_id.unwrap_or(0)),
+            client_os_type: Some(203),
+            client_language: Some("english".to_string()),
+            access_token: Some(access_token),
+            account_name: Some(username.clone()),
+            should_remember_password: Some(opts.auth.remember_password),
+            ..Default::default()
+        };
+        let logon_body = logon.encode_to_vec();
+        let logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+
+        let (client, _logon_resp) = client.login(logon_msg).await?;
+        tracing::info!("Logged in successfully as {username}");
+        Ok(client)
+    } else {
         tracing::info!("Logging in anonymously...");
+        let logon_body = build_logon_body(opts);
+        let mut logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+
         let anon_id = steam::types::SteamId::from_parts(1, 10, 0, 0);
         logon_msg.header.steamid = Some(anon_id.raw());
         logon_msg.header.client_sessionid = Some(0);
-    } else {
-        tracing::info!("Logging in as {}...", opts.auth.username.as_deref().unwrap());
+
+        let (client, _logon_resp) = client.login(logon_msg).await?;
+        tracing::info!("Logged in anonymously");
+        Ok(client)
+    }
+}
+
+/// Perform credential-based authentication (pre-logon, on Encrypted state).
+async fn authenticate_credentials(
+    client: &steam::client::SteamClient<steam::client::Encrypted>,
+    username: &str,
+    opts: &Options,
+) -> Result<String, BoxError> {
+    use rsa::{Oaep, RsaPublicKey, BigUint};
+    use sha1::Sha1;
+
+    // Get the password, prompting if not provided
+    let password = match &opts.auth.password {
+        Some(p) => p.clone(),
+        None => {
+            eprint!("Password for {username}: ");
+            let mut pw = String::new();
+            std::io::stdin().read_line(&mut pw)?;
+            pw.trim().to_string()
+        }
+    };
+
+    // Step 1: Get RSA public key for password encryption
+    let rsa_response = client.get_password_rsa_public_key(username).await?;
+    let modulus = rsa_response.publickey_mod.ok_or("missing RSA modulus")?;
+    let exponent = rsa_response.publickey_exp.ok_or("missing RSA exponent")?;
+    let timestamp = rsa_response.timestamp.ok_or("missing RSA timestamp")?;
+
+    // Step 2: RSA-encrypt the password
+    let n = BigUint::parse_bytes(modulus.as_bytes(), 16)
+        .ok_or("invalid RSA modulus hex")?;
+    let e = BigUint::parse_bytes(exponent.as_bytes(), 16)
+        .ok_or("invalid RSA exponent hex")?;
+    let public_key = RsaPublicKey::new(n, e)
+        .map_err(|e| format!("invalid RSA key: {e}"))?;
+
+    let padding = Oaep::new::<Sha1>();
+    let mut rng = rsa::rand_core::OsRng;
+    let encrypted_password = public_key
+        .encrypt(&mut rng, padding, password.as_bytes())
+        .map_err(|e| format!("RSA encryption failed: {e}"))?;
+
+    let encrypted_password_b64 = base64::engine::general_purpose::STANDARD
+        .encode(&encrypted_password);
+
+    // Step 3: Begin auth session
+    let begin_request = steam::generated::CAuthenticationBeginAuthSessionViaCredentialsRequest {
+        account_name: Some(username.to_string()),
+        encrypted_password: Some(encrypted_password_b64),
+        encryption_timestamp: Some(timestamp),
+        persistence: Some(1), // Persistent
+        website_id: Some("Client".to_string()),
+        ..Default::default()
+    };
+
+    let session = client
+        .begin_auth_session_via_credentials(begin_request)
+        .await?;
+
+    let client_id = session.client_id.ok_or("missing client_id in auth session")?;
+    let request_id = session.request_id.as_ref().ok_or("missing request_id")?;
+    let steam_id = session.steam_id.ok_or("missing steam_id")?;
+
+    // Step 4: Handle 2FA if needed
+    for confirmation in &session.allowed_confirmations {
+        match confirmation {
+            steam::auth::GuardType::DeviceCode => {
+                eprint!("Steam Guard code (authenticator app): ");
+                let mut code = String::new();
+                std::io::stdin().read_line(&mut code)?;
+                client
+                    .submit_steam_guard_code(
+                        client_id,
+                        steam_id,
+                        code.trim(),
+                        steam::auth::GuardType::DeviceCode,
+                    )
+                    .await?;
+                break;
+            }
+            steam::auth::GuardType::EmailCode => {
+                eprint!("Steam Guard code (email): ");
+                let mut code = String::new();
+                std::io::stdin().read_line(&mut code)?;
+                client
+                    .submit_steam_guard_code(
+                        client_id,
+                        steam_id,
+                        code.trim(),
+                        steam::auth::GuardType::EmailCode,
+                    )
+                    .await?;
+                break;
+            }
+            steam::auth::GuardType::DeviceConfirmation => {
+                eprintln!("Confirm login on your Steam mobile app...");
+            }
+            _ => {}
+        }
     }
 
-    let (client, _logon_resp) = client.login(logon_msg).await?;
-    tracing::info!("Logged in successfully");
+    // Step 5: Poll for auth completion
+    loop {
+        let interval = session.poll_interval.unwrap_or(5.0);
+        tokio::time::sleep(std::time::Duration::from_secs_f32(interval)).await;
 
-    Ok(client)
+        match client.poll_auth_session(client_id, request_id).await? {
+            Some(tokens) => {
+                tracing::info!("Authentication successful");
+                return Ok(tokens.refresh_token);
+            }
+            None => {
+                tracing::debug!("Auth session pending, polling again...");
+            }
+        }
+    }
 }
+
+use base64::Engine;
 
 // ── info ─────────────────────────────────────────────────────
 
@@ -347,14 +483,24 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             .get_cdn_auth_token(app_id, depot_id, &cdn_servers[0].host)
             .await?;
 
-        let manifest_bytes = cdn
-            .download_manifest(
-                &cdn_servers[0], depot_id, manifest_id, request_code,
-                cdn_auth.token.as_deref(),
-            )
-            .await?;
+        // Try cached manifest first
+        let cache = steam_client::manifest::ManifestCache::default_for(&install_dir);
+        let mut manifest = if let Some(cached) = cache.load(depot_id, manifest_id) {
+            cached
+        } else {
+            let manifest_bytes = cdn
+                .download_manifest(
+                    &cdn_servers[0], depot_id, manifest_id, request_code,
+                    cdn_auth.token.as_deref(),
+                )
+                .await?;
 
-        let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
+            if let Err(e) = cache.save(depot_id, manifest_id, &manifest_bytes) {
+                tracing::warn!("Failed to cache manifest: {e}");
+            }
+
+            steam_client::manifest::extract_and_parse(&manifest_bytes)?
+        };
 
         // Decrypt filenames if needed
         if manifest.filenames_encrypted {
@@ -370,6 +516,16 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
         let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
         let progress_handle = download::spawn_progress_renderer(event_rx);
 
+        // Build file filter from CLI args
+        let file_filter = if let Some(ref path) = args.filelist {
+            Some(steam_client::download::FileFilter::from_filelist(std::path::Path::new(path))?)
+        } else if let Some(ref pattern) = args.file_regex {
+            Some(steam_client::download::FileFilter::from_regex(pattern)
+                .map_err(|e| -> BoxError { format!("Invalid regex: {e}").into() })?)
+        } else {
+            None
+        };
+
         let job = steam_client::download::DepotJob::builder()
             .cdn(cdn.clone())
             .server(cdn_servers[0].clone())
@@ -380,6 +536,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             .max_downloads(opts.max_downloads)
             .event_sender(event_tx)
             .verify(args.verify)
+            .file_filter(file_filter)
             .build()
             .map_err(|e| -> BoxError { e.into() })?;
 

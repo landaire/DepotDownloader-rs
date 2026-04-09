@@ -35,6 +35,48 @@ pub struct DepotJob {
     event_tx: mpsc::UnboundedSender<DownloadEvent>,
     /// When true, verify existing files and only re-download corrupted chunks.
     verify: bool,
+    /// File filter — only download files matching this filter.
+    file_filter: Option<FileFilter>,
+}
+
+/// Filter to select which files to download.
+pub enum FileFilter {
+    /// Explicit list of filenames (case-insensitive).
+    FileList(Vec<String>),
+    /// Regex pattern (case-insensitive).
+    Regex(regex::Regex),
+}
+
+impl FileFilter {
+    /// Load a file list from a text file (one filename per line).
+    pub fn from_filelist(path: &std::path::Path) -> Result<Self, std::io::Error> {
+        let content = std::fs::read_to_string(path)?;
+        let files: Vec<String> = content
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .map(|l| l.replace('\\', "/"))
+            .collect();
+        Ok(Self::FileList(files))
+    }
+
+    /// Create from a regex pattern string.
+    pub fn from_regex(pattern: &str) -> Result<Self, regex::Error> {
+        let re = regex::RegexBuilder::new(pattern)
+            .case_insensitive(true)
+            .build()?;
+        Ok(Self::Regex(re))
+    }
+
+    fn matches(&self, filename: &str) -> bool {
+        let normalized = filename.replace('\\', "/");
+        match self {
+            Self::FileList(list) => list
+                .iter()
+                .any(|f| f.eq_ignore_ascii_case(&normalized)),
+            Self::Regex(re) => re.is_match(&normalized),
+        }
+    }
 }
 
 impl DepotJob {
@@ -57,6 +99,18 @@ impl DepotJob {
                     continue;
                 }
             };
+
+            // Apply file filter
+            if let Some(ref filter) = self.file_filter {
+                if !filter.matches(&filename) {
+                    send_event!(self.event_tx, DownloadEvent::FileSkipped {
+                        depot_id: self.depot_id,
+                        filename,
+                    });
+                    files_completed += 1;
+                    continue;
+                }
+            }
 
             // Skip directories (flag 0x40 = directory)
             if file.flags.is_some_and(|f| f & 0x40 != 0) {
@@ -269,6 +323,7 @@ impl DepotJob {
             semaphore: self.semaphore.clone(),
             event_tx: self.event_tx.clone(),
             verify: self.verify,
+            file_filter: None, // filter only needed at the top-level download loop
         }
     }
 }
@@ -362,6 +417,7 @@ pub struct DepotJobBuilder {
     max_downloads: Option<usize>,
     event_tx: Option<mpsc::UnboundedSender<DownloadEvent>>,
     verify: bool,
+    file_filter: Option<FileFilter>,
 }
 
 impl DepotJobBuilder {
@@ -410,6 +466,11 @@ impl DepotJobBuilder {
         self
     }
 
+    pub fn file_filter(mut self, filter: Option<FileFilter>) -> Self {
+        self.file_filter = filter;
+        self
+    }
+
     pub fn build(self) -> Result<DepotJob, &'static str> {
         Ok(DepotJob {
             cdn: self.cdn.ok_or("cdn is required")?,
@@ -421,6 +482,7 @@ impl DepotJobBuilder {
             semaphore: Arc::new(Semaphore::new(self.max_downloads.unwrap_or(8))),
             event_tx: self.event_tx.ok_or("event_sender is required")?,
             verify: self.verify,
+            file_filter: self.file_filter,
         })
     }
 }
