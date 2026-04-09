@@ -1,0 +1,35 @@
+{
+  "description": "capture from Dns { host: \"205.196.6.134\", port: 27017 }",
+  "packets": [
+    {
+      "seq": 0,
+      "emsg": 1303,
+      "payload_b64": "FwUAAP////////////////////8BAAAAAQAAACMsOKlM2jYs8BFbim4Gpbg="
+    },
+    {
+      "seq": 1,
+      "emsg": 1305,
+      "payload_b64": "GQUAAP////////////////////8BAAAA"
+    },
+    {
+      "seq": 2,
+      "emsg": 234853299,
+      "payload_b64": "s5P/DWg9IggXyBFACXWfnf/24Z5XMhdlTrAPe+3Nl5afVRcuSTvXiWRBc4a7TaGK0vdtXWUv9sHE8ulHvkNZKiZLJyYkheuWvq4j+NIfxP/UXLznop2qWdFieSAAdOISy9/RTEHL8gZLZ7PosF4V2qgWwALZb6q4L068Ms9gZ+jXT6+RQh1sK3dcwgjT/m1/aoN7rjWa8p1THpybGRHm1VJiIjveJZxAXeZGr4wjfyy6BmCcyV26GFuZLhZWAh5LbSASp2UaF9mxpRd56cUf04PKo5OlzBxAae2ZYOew7jE+SZ/NrxARbMB0vBalJbZL"
+    },
+    {
+      "seq": 3,
+      "emsg": 1792574308,
+      "payload_b64": "ZIPYaoKmNdGZ8yCcTvi3dmB08eKbpPVjTv4f16/EldFhrs7BOAVuKIWu22CykoYqebchSq5HWlsBBgvaRVSxr+uHHV4fl3Z3egWsqJwoGcQV5nEbQX9QtOy3bFhcfnjP5DVkEdMMc8NjagGeEQRvoBIWx4yvqCPIW5a6nQn0Qs2RcMrxfRv9T8pIdaAXZdR9G3DBfFUiKTqP/UHHoM6zi5+u5YVfaz7OZ0IDCAcSKy1ztwtVefopYeS63GgevZbpPS8LtgZRDnt3gF09RQ8DXnc3glch5no2iP/269CIz0ow7BNGctPh+2ZtjYiuINtsIPDD1Oixaqh7os490rTOz3bSkiYTu28ha4GtaJ/KOexzl8uR8qexGk4DcTS2PZXVYE3Z1ODelHnwvLD8MPivXgJzcLALxFeNtrzhb/XF0P9Vel8QFTqPbdVk7/fslYcCRqQGDKEDCc0inVc6m3knkFjVytsQxPxw4gjWMTaapNB3YF1ONeiJE1N4LzW6Jd4wuBWiOgPcNXE1lIzSV1uTo2P6Q2OxGjEa1EWMlHOfTytRWOo7YPvlw1k0+Wi/p1kdZQW7eMSo2U3NhvT+tVMA9Qz4oSO4jEgyNKPr9eC9A3vFpS2F29ZD0z9szo+489JkeDMUjGHIY68bs4GQZcRcFZnp1fhWOzbFIW5SVu3IpqY7gDLQaFaqSdeySpAvlzqJ"
+    },
+    {
+      "seq": 4,
+      "emsg": 860461164,
+      "payload_b64": "bJhJM8IQJwINkX7Xjh8u//X1IxB4mGE07JPK43oEoA/YUl4hhegHg/kkXxUcPXWOfc5EYFWl4Ro1EDqGSosRBi4Skcpx0HFOhRWXgRiQjJdUrXlkQ6Vj0s6Cxt5Az1zHjnSFkJnCxYR0aKp4V2Lb1CKXkoHy/I2uGvDo4qBs71AGfx3kfAfNd1Ul+lxymOCa"
+    },
+    {
+      "seq": 5,
+      "emsg": 1619606707,
+      "payload_b64": "szyJ4C8Yput30zh6+KV3oCcMT1PDnlHPzPjzUyp0gGQR+nq4yuwiHIVoFY6Gdzb4Q9XAhYlPqK81tT/KZn5yNJbyXEIUZuf7p31tFPsb/qR6fduwCg7ZPBv48iYACHiSbAMwqu5nJMxFuBvUfc1AD1fB8VglEEhRZ5pDWzr76Z8="
+    }
+  ]
+}

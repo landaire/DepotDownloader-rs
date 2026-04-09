@@ -240,15 +240,23 @@ impl SteamClient<Encrypted> {
             body,
         };
 
-        let (tx, rx) = oneshot::channel();
-        self.inner.pending_jobs.lock().await.insert(job_id, tx);
-
         let mut buf = Vec::with_capacity(msg.serialized_len());
         msg.write_to(&mut buf).expect("Vec write never fails");
         self.send_encrypted(&buf).await?;
 
-        rx.await
-            .map_err(|_| ConnectionError::Disconnected.into())
+        loop {
+            let incoming = recv_routed_msg_except(&self.inner, job_id).await?;
+
+            if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
+                if incoming.header.jobid_target == Some(job_id) {
+                    return Ok(incoming);
+                }
+            }
+
+            if self.inner.event_tx.send(incoming).is_err() {
+                tracing::trace!("Event receiver dropped, discarding message");
+            }
+        }
     }
 
     async fn send_encrypted(&self, payload: &[u8]) -> Result<(), Error> {
@@ -281,6 +289,9 @@ impl SteamClient<LoggedIn> {
     }
 
     /// Send a service method call and wait for the response.
+    ///
+    /// Drives the recv loop internally until the matching response arrives.
+    /// Other messages received while waiting are forwarded to the event channel.
     pub async fn call_service_method(
         &self,
         method_name: &str,
@@ -302,15 +313,25 @@ impl SteamClient<LoggedIn> {
             body,
         };
 
-        let (tx, rx) = oneshot::channel();
-        self.inner.pending_jobs.lock().await.insert(job_id, tx);
-
         let mut buf = Vec::with_capacity(msg.serialized_len());
         msg.write_to(&mut buf).expect("Vec write never fails");
         self.send_encrypted(&buf).await?;
 
-        rx.await
-            .map_err(|_| ConnectionError::Disconnected.into())
+        // Drive the recv loop until our job response arrives
+        loop {
+            let incoming = recv_routed_msg_except(&self.inner, job_id).await?;
+
+            if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
+                if incoming.header.jobid_target == Some(job_id) {
+                    return Ok(incoming);
+                }
+            }
+
+            // Not our response — forward to event channel
+            if self.inner.event_tx.send(incoming).is_err() {
+                tracing::trace!("Event receiver dropped, discarding message");
+            }
+        }
     }
 
     pub async fn recv_msg(&self) -> Result<IncomingMsg, Error> {
@@ -382,6 +403,69 @@ async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
                         tracing::warn!("Job {job_id} receiver dropped, discarding response");
                     }
                     continue;
+                }
+            }
+        }
+
+        return Ok(incoming);
+    }
+}
+
+/// Like recv_routed_msg but does NOT route the specified job_id —
+/// lets it pass through so the caller can handle it directly.
+async fn recv_routed_msg_except(inner: &ClientInner, except_job_id: u64) -> Result<IncomingMsg, Error> {
+    loop {
+        {
+            let mut queue = inner.msg_queue.lock().await;
+            if let Some(msg) = queue.pop_front() {
+                if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE {
+                    if let Some(job_id) = msg.header.jobid_target {
+                        // Don't steal our caller's job
+                        if job_id != except_job_id {
+                            if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
+                                if tx.send(msg).is_err() {
+                                    tracing::warn!("Job {job_id} receiver dropped");
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
+                return Ok(msg);
+            }
+        }
+
+        let raw = inner.transport.recv().await?;
+        let cipher = inner.cipher.lock().await;
+        let payload = match cipher.as_ref() {
+            Some(c) => Bytes::from(c.decrypt(&raw).map_err(Error::Crypto)?),
+            None => raw,
+        };
+        drop(cipher);
+
+        let incoming = parse_incoming(payload)?;
+
+        if incoming.emsg == EMsg::MULTI {
+            let sub_messages = multi::unpack_multi(&incoming.body)?;
+            let mut queue = inner.msg_queue.lock().await;
+            for sub in sub_messages {
+                match parse_incoming(Bytes::from(sub)) {
+                    Ok(parsed) => queue.push_back(parsed),
+                    Err(e) => tracing::warn!("Failed to parse sub-message in Multi: {e}"),
+                }
+            }
+            continue;
+        }
+
+        if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
+            if let Some(job_id) = incoming.header.jobid_target {
+                if job_id != except_job_id {
+                    if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
+                        if tx.send(incoming).is_err() {
+                            tracing::warn!("Job {job_id} receiver dropped");
+                        }
+                        continue;
+                    }
                 }
             }
         }

@@ -1,0 +1,35 @@
+{
+  "description": "capture from Dns { host: \"162.254.195.66\", port: 27017 }",
+  "packets": [
+    {
+      "seq": 0,
+      "emsg": 1303,
+      "payload_b64": "FwUAAP////////////////////8BAAAAAQAAAGq5MlIPxZRyu/uitaHQTUI="
+    },
+    {
+      "seq": 1,
+      "emsg": 1305,
+      "payload_b64": "GQUAAP////////////////////8BAAAA"
+    },
+    {
+      "seq": 2,
+      "emsg": 2139454192,
+      "payload_b64": "8HqFf9v8AvB9WNpmjzbDrzwkkPBCYAzq4s5F3Ra439kcNB/tEFzpRnYRi3VVOpOqUVrgXwnAFLUq4mHLJ7sazjxIlDxsVm4Eh6eG163xvSDmv71dUgIqcbvMC3QHwet3oi0LAOO4SdMD82dtnP+F0QiwljQk1t31pv1N+jOurQpcPuXHmgKBKIC7ywFi3LG+nSG07Hil/C9M2025re6ImQWtsEcPqxiBO06GlPS4g+FQwr1qv4B9jJN01Bqows3cGLhPv5D2YxwmiybAQva6S6k7CqiSDX/ac14fda6REBpQtiqljA17S7FYk/bdcEcc"
+    },
+    {
+      "seq": 3,
+      "emsg": 231919943,
+      "payload_b64": "R9HSjWU+TqHVMzOUBTtqozDCkIwrs5kg0Ts/muNiTXm/dWh0jA4DNK6L9qioBcuywlZkQHE2uOxNYND/FIqYzpeq5Af9kSHO0HVFcbOkhU+LT0wYaksjvoP8x4jnZwZDNtpkiuPDdmIZ4d/lpBfLgAehBWhRw8AD1LvCdhJEF+6dizaSpdVdptEo46ldd/RzwasGKwgDwqmwtoxp70Cmq2DgbzzYPQqpcl1T+4yCNBgUaFtWN/p1diR+m2HHg6r4kl+JfachXxz149kkhwdRKm/aK8SNsFXMxOTXrO0EHieD/PicIBGhMnAQQw9qRYbzOFd5dS1YlxgFAgFutgrqRnTMZeL2sXTFaqdr2KX+YgNY0ArmYo82OZsj6PA+UhlEwrnW9GHHStopNLXfDOqEQJL40z+h1xnLgex0Uv4KAN6o2t1myQ7g/ByN72EmJWF/GOx3XgFfkx8PhMDt/M1nUipu8egGIPctna6IW+93WgZDGpH+2x4VwIZTLjZpnBC19ukABspwQ7uXOqAjRAf2DpVV9xFf0mhc5t+4l+WYdmKUz2VO++Qk5RUKf+oBpzs+iohioMEa+9+/tJnjcIIqUTiv254FfSdD5KrW2jdoTD50ifqJmAK/g1c5C7Eq5i4wpo7l8yTE+DX9wVdCoZIKiIY2O/AC7nvDaqxDqCdDV/UQHFZ2wiKPZnmY358dj4K0"
+    },
+    {
+      "seq": 4,
+      "emsg": 850675451,
+      "payload_b64": "+0a0MnyjHgCGDPh64E6BanQu/RqxpBLtArEer0YkoYAaw5x640q5jltBmHhBJ3/MQESwQjj7TCI9ho0eFFfB7ZYQLp3jjtUGjvSCS1FzmLpPQIzvCaz3UkI+85DeCYQQ+7YjDnB7w+ksh6JgDC5tX7AT4h1ugWYn7QGilhy0NdrilqtM78dt/ooiV4+tIdtd"
+    },
+    {
+      "seq": 5,
+      "emsg": 538163632,
+      "payload_b64": "sLkToO0bAXFn3AWPg8jDvoPu4US8wlhtTYs+ioXlB0GBM1t4pUDja/3WP0+2la+H2uBBH2ONGa1H+xtFs+cfuT8ORXsreI2+kZbgExIBus0vMh1YIAp/FHueUf9LYfWxF3OlUmIDo2m6fpCJY7/gTMSXCoF7tyKynOV5D1NBLM8="
+    }
+  ]
+}
