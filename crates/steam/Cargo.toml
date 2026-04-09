@@ -1,0 +1,35 @@
+[package]
+name = "steam"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+prost.workspace = true
+reqwest.workspace = true
+flate2.workspace = true
+zip.workspace = true
+zstd.workspace = true
+lzma-rs.workspace = true
+aes.workspace = true
+cbc.workspace = true
+ecb.workspace = true
+rsa.workspace = true
+hmac.workspace = true
+sha1.workspace = true
+crc32fast.workspace = true
+adler.workspace = true
+getrandom.workspace = true
+winnow.workspace = true
+bytes.workspace = true
+byteorder.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+qrcode.workspace = true
+regex.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "sync"] }
+
+[build-dependencies]
+prost-build = "0.13"
+protox = "0.7"
