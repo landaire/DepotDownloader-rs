@@ -11,7 +11,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use prost::Message;
 
-use crate::depot::{ChunkId, DepotId, ManifestId};
+use crate::depot::{ChunkId, DepotId, DepotKey, ManifestId};
 use crate::error::ManifestError;
 use crate::generated::{ContentManifestMetadata, ContentManifestPayload, ContentManifestSignature};
 
@@ -58,6 +58,38 @@ pub struct ManifestChunk {
 }
 
 impl DepotManifest {
+    /// Decrypt encrypted filenames using the depot key.
+    ///
+    /// Steam encrypts filenames with AES-256: the base64-encoded filename
+    /// is decoded, the first 16 bytes are an ECB-encrypted IV, and the
+    /// remainder is CBC-encrypted with PKCS7 padding. After decryption,
+    /// trailing null bytes are stripped and path separators normalized.
+    pub fn decrypt_filenames(&mut self, key: &DepotKey) -> Result<(), ManifestError> {
+        if !self.filenames_encrypted {
+            return Ok(());
+        }
+
+        for file in &mut self.files {
+            if let Some(ref encrypted) = file.filename {
+                match decrypt_filename(encrypted, key) {
+                    Ok(decrypted) => file.filename = Some(decrypted),
+                    Err(e) => {
+                        tracing::warn!("Failed to decrypt filename: {e}");
+                        // Leave encrypted name in place
+                    }
+                }
+            }
+        }
+
+        // Sort files by name after decryption (matches SteamKit2 behavior)
+        self.files.sort_by(|a, b| {
+            a.filename.as_deref().unwrap_or("").cmp(b.filename.as_deref().unwrap_or(""))
+        });
+
+        self.filenames_encrypted = false;
+        Ok(())
+    }
+
     /// Parse a manifest from raw bytes (after ZIP decompression).
     ///
     /// Supports both v4 (binary) and v5 (protobuf) manifest formats.
@@ -298,6 +330,50 @@ impl DepotManifest {
 fn try_sha_array(bytes: &[u8]) -> Option<[u8; 20]> {
     bytes.try_into().ok()
 }
+
+/// Decrypt a single encrypted filename.
+///
+/// Process:
+/// 1. Base64-decode the encrypted string
+/// 2. First 16 bytes → ECB-decrypt to get the IV
+/// 3. Remaining bytes → CBC-decrypt with PKCS7 padding
+/// 4. Strip trailing null bytes
+/// 5. Normalize path separators to OS convention
+fn decrypt_filename(encrypted_b64: &str, key: &DepotKey) -> Result<String, ManifestError> {
+    use aes::Aes256;
+    use aes::cipher::{BlockDecrypt, KeyInit, block_padding::Pkcs7};
+    use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+
+    let encrypted = base64::engine::general_purpose::STANDARD
+        .decode(encrypted_b64.trim())
+        .map_err(|_| ManifestError::MissingSection("invalid base64 in filename"))?;
+
+    if encrypted.len() < 32 {
+        return Err(ManifestError::MissingSection("encrypted filename too short"));
+    }
+
+    // ECB-decrypt the first 16 bytes to get the IV
+    let ecb_cipher = Aes256::new((&key.0).into());
+    let mut iv_block = aes::Block::default();
+    iv_block.copy_from_slice(&encrypted[..16]);
+    ecb_cipher.decrypt_block(&mut iv_block);
+    let iv: [u8; 16] = iv_block.into();
+
+    // CBC-decrypt the rest
+    let mut ciphertext = encrypted[16..].to_vec();
+    let plaintext = cbc::Decryptor::<Aes256>::new((&key.0).into(), (&iv).into())
+        .decrypt_padded_mut::<Pkcs7>(&mut ciphertext)
+        .map_err(|_| ManifestError::MissingSection("filename decryption failed"))?;
+
+    // Strip trailing null bytes
+    let end = plaintext.iter().position(|&b| b == 0).unwrap_or(plaintext.len());
+    let name = String::from_utf8_lossy(&plaintext[..end]).into_owned();
+
+    // Normalize path separators
+    Ok(name.replace('\\', "/"))
+}
+
+use base64::Engine;
 
 #[cfg(test)]
 mod tests {

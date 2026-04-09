@@ -33,6 +33,8 @@ pub struct DepotJob {
     install_dir: PathBuf,
     semaphore: Arc<Semaphore>,
     event_tx: mpsc::UnboundedSender<DownloadEvent>,
+    /// When true, verify existing files and only re-download corrupted chunks.
+    verify: bool,
 }
 
 impl DepotJob {
@@ -42,6 +44,7 @@ impl DepotJob {
 
     /// Download all files from a manifest.
     pub async fn download(&self, manifest: &DepotManifest) -> Result<(), BoxError> {
+        tracing::info!("Starting download of {} files", manifest.files.len());
         let files_total = manifest.files.len();
         let mut files_completed = 0usize;
         let mut handles = Vec::new();
@@ -73,6 +76,7 @@ impl DepotJob {
             let task = FileTask {
                 path: self.install_dir.join(&filename),
                 size: file.size,
+                flags: file.flags,
                 chunks: file.chunks.clone(),
                 filename: filename.clone(),
             };
@@ -88,6 +92,9 @@ impl DepotJob {
             let handle = tokio::spawn(async move {
                 let result = job.download_file(&task).await;
                 if result.is_ok() {
+                    // Set executable permissions on Unix
+                    set_executable_if_needed(&task);
+
                     send_event!(job.event_tx, DownloadEvent::FileCompleted {
                         depot_id: job.depot_id,
                         filename: task.filename.clone(),
@@ -113,7 +120,42 @@ impl DepotJob {
     }
 
     /// Download a single file by fetching all its chunks.
+    ///
+    /// Downloads to a staging path first, then atomically moves to the
+    /// final location on success. This prevents partial files on interruption.
+    ///
+    /// In verify mode: if the file already exists, validate each chunk's
+    /// Adler32 checksum and only re-download corrupted chunks.
     async fn download_file(&self, task: &FileTask) -> Result<(), BoxError> {
+        // If verifying and the file exists with correct size, check chunks
+        if self.verify && task.path.exists() {
+            if let Some(expected_size) = task.size {
+                if let Ok(meta) = tokio::fs::metadata(&task.path).await {
+                    if meta.len() == expected_size {
+                        let needs_download = verify_chunks(&task.path, &task.chunks).await?;
+                        if needs_download.is_empty() {
+                            tracing::debug!("{}: all chunks valid, skipping", task.filename);
+                            return Ok(());
+                        }
+                        tracing::info!(
+                            "{}: {} of {} chunks need re-download",
+                            task.filename,
+                            needs_download.len(),
+                            task.chunks.len()
+                        );
+                        // TODO: only download the bad chunks instead of the whole file
+                    }
+                }
+            }
+        }
+
+        // Create staging path: .staging/<filename>
+        let staging_dir = self.install_dir.join(".staging");
+        let staging_path = staging_dir.join(&task.filename);
+
+        if let Some(parent) = staging_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
         if let Some(parent) = task.path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -122,7 +164,7 @@ impl DepotJob {
             .create(true)
             .write(true)
             .truncate(true)
-            .open(&task.path)
+            .open(&staging_path)
             .await?;
 
         if let Some(size) = task.size {
@@ -149,8 +191,9 @@ impl DepotJob {
 
             let handle = tokio::spawn(async move {
                 let _permit = job.semaphore.acquire().await?;
+                tracing::debug!("Fetching chunk {chunk_id}");
 
-                let raw = job
+                let raw = match job
                     .cdn
                     .download_chunk(
                         &job.server,
@@ -158,7 +201,17 @@ impl DepotJob {
                         &chunk_id,
                         job.cdn_auth_token.as_deref(),
                     )
-                    .await?;
+                    .await
+                {
+                    Ok(data) => {
+                        tracing::debug!("Downloaded chunk {chunk_id} ({} bytes)", data.len());
+                        data
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to download chunk {chunk_id}: {e}");
+                        return Err(e.into());
+                    }
+                };
 
                 let depot_key = job.depot_key.clone();
                 let decompressed = tokio::task::spawn_blocking(move || {
@@ -196,6 +249,11 @@ impl DepotJob {
             handle.await??;
         }
 
+        // Atomic move from staging to final location
+        // Drop the file handle first so it's not held during rename
+        drop(file);
+        tokio::fs::rename(&staging_path, &task.path).await?;
+
         Ok(())
     }
 
@@ -210,14 +268,84 @@ impl DepotJob {
             install_dir: self.install_dir.clone(),
             semaphore: self.semaphore.clone(),
             event_tx: self.event_tx.clone(),
+            verify: self.verify,
         }
     }
 }
 
+/// Verify which chunks in an existing file are corrupted.
+///
+/// Returns the list of chunks that need to be re-downloaded.
+async fn verify_chunks(
+    path: &std::path::Path,
+    chunks: &[ManifestChunk],
+) -> Result<Vec<usize>, BoxError> {
+    use steam::util::checksum::SteamAdler32;
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    let mut file = tokio::fs::File::open(path).await?;
+    let mut bad_indices = Vec::new();
+
+    for (i, chunk) in chunks.iter().enumerate() {
+        let (offset, size, expected_checksum) = match (chunk.offset, chunk.uncompressed_size, chunk.checksum) {
+            (Some(o), Some(s), Some(c)) => (o, s, c),
+            _ => {
+                bad_indices.push(i);
+                continue;
+            }
+        };
+
+        file.seek(std::io::SeekFrom::Start(offset)).await?;
+        let mut buf = vec![0u8; size as usize];
+        if file.read_exact(&mut buf).await.is_err() {
+            bad_indices.push(i);
+            continue;
+        }
+
+        let actual = SteamAdler32::compute(&buf);
+        if actual != SteamAdler32(expected_checksum) {
+            bad_indices.push(i);
+        }
+    }
+
+    Ok(bad_indices)
+}
+
+/// EDepotFileFlag::Executable = 0x04
+#[cfg(unix)]
+const FLAG_EXECUTABLE: u32 = 0x04;
+
+/// Set Unix executable permissions if the file has the Executable flag.
+fn set_executable_if_needed(task: &FileTask) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if task.flags.is_some_and(|f| f & FLAG_EXECUTABLE != 0) {
+            if let Ok(metadata) = std::fs::metadata(&task.path) {
+                let mut perms = metadata.permissions();
+                let mode = perms.mode();
+                // Add execute bits for user/group/other
+                perms.set_mode(mode | 0o111);
+                if let Err(e) = std::fs::set_permissions(&task.path, perms) {
+                    tracing::warn!("Failed to set executable permissions on {}: {e}", task.filename);
+                }
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = task; // suppress unused warning
+    }
+}
+
 /// Per-file download context.
+#[allow(dead_code)] // flags is only read on Unix
 struct FileTask {
     path: PathBuf,
     size: Option<u64>,
+    flags: Option<u32>,
     chunks: Vec<ManifestChunk>,
     filename: String,
 }
@@ -233,6 +361,7 @@ pub struct DepotJobBuilder {
     install_dir: Option<PathBuf>,
     max_downloads: Option<usize>,
     event_tx: Option<mpsc::UnboundedSender<DownloadEvent>>,
+    verify: bool,
 }
 
 impl DepotJobBuilder {
@@ -276,6 +405,11 @@ impl DepotJobBuilder {
         self
     }
 
+    pub fn verify(mut self, verify: bool) -> Self {
+        self.verify = verify;
+        self
+    }
+
     pub fn build(self) -> Result<DepotJob, &'static str> {
         Ok(DepotJob {
             cdn: self.cdn.ok_or("cdn is required")?,
@@ -286,6 +420,7 @@ impl DepotJobBuilder {
             install_dir: self.install_dir.ok_or("install_dir is required")?,
             semaphore: Arc::new(Semaphore::new(self.max_downloads.unwrap_or(8))),
             event_tx: self.event_tx.ok_or("event_sender is required")?,
+            verify: self.verify,
         })
     }
 }

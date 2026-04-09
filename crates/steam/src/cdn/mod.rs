@@ -61,6 +61,7 @@ impl CdnClient {
     ) -> Result<Bytes, Error> {
         let path = format!("depot/{}/chunk/{chunk_id}", depot_id.0);
         let url = server.build_url(&path, cdn_auth_token);
+        tracing::debug!("Downloading chunk: {url} (has_token={})", cdn_auth_token.is_some());
         let resp = self.http.get(&url).send().await?.error_for_status()?;
         Ok(resp.bytes().await?)
     }

@@ -1,6 +1,7 @@
 mod cli;
 mod download;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use prost::Message;
@@ -152,8 +153,17 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
         return Err("No CDN servers available".into());
     }
 
+    let filter = DepotFilter {
+        os: args.os.as_deref(),
+        arch: args.arch.as_deref(),
+        language: args.language.as_deref(),
+        all_platforms: args.all_platforms,
+        all_archs: args.all_archs,
+        all_languages: args.all_languages,
+    };
+
     let depot_ids: Vec<DepotId> = if args.depot.is_empty() {
-        discover_depots(&app_infos)
+        discover_depots_filtered(&app_infos, &filter)
     } else {
         args.depot.iter().map(|&id| DepotId(id)).collect()
     };
@@ -162,11 +172,12 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
         return Err("No depots to download".into());
     }
 
-    let manifest_ids: Vec<Option<ManifestId>> = if args.manifest.is_empty() {
-        depot_ids.iter().map(|_| None).collect()
-    } else {
-        args.manifest.iter().map(|&id| Some(ManifestId(id))).collect()
-    };
+    // Build manifest ID lookup: explicit IDs take priority, otherwise discover from PICS
+    let explicit_manifests: HashMap<DepotId, ManifestId> = depot_ids
+        .iter()
+        .zip(args.manifest.iter())
+        .map(|(&d, &m)| (d, ManifestId(m)))
+        .collect();
 
     let install_dir = args
         .output
@@ -176,16 +187,47 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
 
     let cdn = steam::cdn::CdnClient::new()?;
 
-    for (i, &depot_id) in depot_ids.iter().enumerate() {
+    for &depot_id in &depot_ids {
         tracing::info!("Processing depot {depot_id}...");
 
         let depot_key = client.get_depot_decryption_key(depot_id, app_id).await?;
 
-        let manifest_id = manifest_ids
-            .get(i)
-            .copied()
-            .flatten()
-            .ok_or_else(|| format!("No manifest ID for depot {depot_id}"))?;
+        let manifest_id = match explicit_manifests.get(&depot_id) {
+            Some(&id) => id,
+            None => {
+                // Auto-discover from PICS, with fallback to "public" branch
+                let manifests = discover_manifests(&app_infos, depot_id);
+                let found = manifests
+                    .iter()
+                    .find(|m| m.branch == args.branch)
+                    .and_then(|m| m.manifest_id);
+
+                match found {
+                    Some(id) => id,
+                    None if args.branch != "public" => {
+                        tracing::warn!(
+                            "Branch '{}' not found for depot {depot_id}, trying 'public'",
+                            args.branch
+                        );
+                        manifests
+                            .iter()
+                            .find(|m| m.branch == "public")
+                            .and_then(|m| m.manifest_id)
+                            .ok_or_else(|| -> BoxError {
+                                format!("No manifest for depot {depot_id} on any branch").into()
+                            })?
+                    }
+                    None => {
+                        return Err(format!(
+                            "No manifest for depot {depot_id} on branch '{}'",
+                            args.branch
+                        ).into());
+                    }
+                }
+            }
+        };
+
+        tracing::info!("Depot {depot_id} manifest {manifest_id}");
 
         let request_code = client
             .get_manifest_request_code(app_id, depot_id, manifest_id, Some(&args.branch), None)
@@ -203,7 +245,12 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             )
             .await?;
 
-        let manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
+        let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
+
+        // Decrypt filenames if needed
+        if manifest.filenames_encrypted {
+            manifest.decrypt_filenames(&depot_key)?;
+        }
 
         tracing::info!(
             "Manifest: {} files, {} bytes",
@@ -223,10 +270,12 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             .install_dir(install_dir.join(format!("{depot_id}")))
             .max_downloads(opts.max_downloads)
             .event_sender(event_tx)
+            .verify(args.verify)
             .build()
             .map_err(|e| -> BoxError { e.into() })?;
 
         job.download(&manifest).await?;
+        drop(job); // Drop the event sender so the progress renderer sees channel close
         progress_handle.await?;
 
         tracing::info!("Depot {depot_id} download complete");
@@ -305,10 +354,19 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
     let manifest_id = match args.manifest {
         Some(id) => ManifestId(id),
         None => {
-            return Err(
-                "Manifest ID discovery from branch not yet implemented. Pass --manifest explicitly."
-                    .into(),
-            );
+            // Auto-discover manifest ID from branch via PICS
+            let app_infos = get_app_info(&client, &[app_id]).await?;
+            let manifests = discover_manifests(&app_infos, depot_id);
+            manifests
+                .iter()
+                .find(|m| m.branch == args.branch)
+                .and_then(|m| m.manifest_id)
+                .ok_or_else(|| -> BoxError {
+                    format!(
+                        "No manifest found for depot {depot_id} on branch '{}'",
+                        args.branch
+                    ).into()
+                })?
         }
     };
 
@@ -334,7 +392,21 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
         )
         .await?;
 
-    let manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
+    let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
+
+    // Decrypt filenames if encrypted
+    if manifest.filenames_encrypted {
+        match client.get_depot_decryption_key(depot_id, app_id).await {
+            Ok(key) => {
+                manifest.decrypt_filenames(&key)?;
+                tracing::info!("Decrypted {} filenames", manifest.files.len());
+            }
+            Err(e) => {
+                tracing::warn!("Could not get depot key for filename decryption: {e}");
+                tracing::warn!("Filenames will be shown in encrypted form");
+            }
+        }
+    }
 
     match args.format {
         OutputFormat::Json => {
@@ -445,11 +517,68 @@ fn parse_app_kv(info: &steam::apps::AppInfo) -> Option<steam::types::key_value::
 struct DepotInfo {
     id: DepotId,
     name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    os_list: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    os_arch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
+    /// If set, this depot's manifests come from another app.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    depot_from_app: Option<u32>,
 }
 
-fn discover_depots(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotId> {
+/// Depot filter criteria from CLI args.
+struct DepotFilter<'a> {
+    os: Option<&'a str>,
+    arch: Option<&'a str>,
+    language: Option<&'a str>,
+    all_platforms: bool,
+    all_archs: bool,
+    all_languages: bool,
+}
+
+impl DepotFilter<'_> {
+    fn matches(&self, depot: &DepotInfo) -> bool {
+        // OS filter
+        if !self.all_platforms {
+            if let (Some(filter_os), Some(depot_os)) = (self.os, depot.os_list.as_deref()) {
+                let os_list: Vec<&str> = depot_os.split(',').map(|s| s.trim()).collect();
+                if !os_list.iter().any(|o| o.eq_ignore_ascii_case(filter_os)) {
+                    tracing::debug!("Depot {} skipped: OS {depot_os} doesn't match {filter_os}", depot.id);
+                    return false;
+                }
+            }
+        }
+
+        // Architecture filter
+        if !self.all_archs {
+            if let (Some(filter_arch), Some(depot_arch)) = (self.arch, depot.os_arch.as_deref()) {
+                if !depot_arch.eq_ignore_ascii_case(filter_arch) {
+                    tracing::debug!("Depot {} skipped: arch {depot_arch} doesn't match {filter_arch}", depot.id);
+                    return false;
+                }
+            }
+        }
+
+        // Language filter
+        if !self.all_languages {
+            if let (Some(filter_lang), Some(depot_lang)) = (self.language, depot.language.as_deref()) {
+                if !depot_lang.eq_ignore_ascii_case(filter_lang) {
+                    tracing::debug!("Depot {} skipped: language {depot_lang} doesn't match {filter_lang}", depot.id);
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+}
+
+fn discover_depots_filtered(app_infos: &[steam::apps::AppInfo], filter: &DepotFilter<'_>) -> Vec<DepotId> {
     discover_depot_details(app_infos)
         .into_iter()
+        .filter(|d| filter.matches(d))
         .map(|d| d.id)
         .collect()
 }
@@ -473,10 +602,18 @@ fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> 
         if let KvValue::Children(children) = &depots_section.value {
             for (key, value) in children {
                 if let Ok(id) = key.parse::<u32>() {
-                    let name = value.get("name").and_then(|n| n.as_str()).map(String::from);
+                    let str_field = |key: &str| value.get(key).and_then(|n| n.as_str()).map(String::from);
+                    let depot_from_app = value
+                        .get("depotfromapp")
+                        .and_then(|n| n.as_str())
+                        .and_then(|s| s.parse::<u32>().ok());
                     depots.push(DepotInfo {
                         id: DepotId(id),
-                        name,
+                        name: str_field("name"),
+                        os_list: str_field("oslist"),
+                        os_arch: str_field("osarch"),
+                        language: str_field("language"),
+                        depot_from_app,
                     });
                 }
             }
