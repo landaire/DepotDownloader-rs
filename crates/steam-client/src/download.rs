@@ -37,6 +37,8 @@ pub struct DepotJob {
     verify: bool,
     /// File filter — only download files matching this filter.
     file_filter: Option<FileFilter>,
+    /// Previous manifest for delta downloads.
+    previous_manifest: Option<DepotManifest>,
 }
 
 /// Filter to select which files to download.
@@ -127,11 +129,20 @@ impl DepotJob {
                 continue;
             }
 
+            // Find matching file in previous manifest for delta comparison
+            let old_chunks: Option<Vec<ManifestChunk>> = self.previous_manifest.as_ref()
+                .and_then(|old| {
+                    old.files.iter()
+                        .find(|f| f.filename.as_deref() == Some(&filename))
+                        .map(|f| f.chunks.clone())
+                });
+
             let task = FileTask {
                 path: self.install_dir.join(&filename),
                 size: file.size,
                 flags: file.flags,
                 chunks: file.chunks.clone(),
+                old_chunks,
                 filename: filename.clone(),
             };
 
@@ -226,6 +237,49 @@ impl DepotJob {
         }
 
         let file = Arc::new(tokio::sync::Mutex::new(file));
+
+        // If we have a previous manifest, copy unchanged chunks from the old file
+        if let Some(ref old_chunks) = task.old_chunks {
+            if task.path.exists() {
+                let mut copied = 0usize;
+                let old_file = tokio::fs::File::open(&task.path).await?;
+                let old_file = Arc::new(tokio::sync::Mutex::new(old_file));
+
+                for chunk in &task.chunks {
+                    let chunk_id = match &chunk.id {
+                        Some(id) => id,
+                        None => continue,
+                    };
+
+                    // Find matching chunk in old manifest by ID
+                    let old_match = old_chunks.iter().find(|oc| oc.id.as_ref() == Some(chunk_id));
+
+                    if let Some(old_chunk) = old_match {
+                        if let (Some(old_offset), Some(new_offset), Some(size)) =
+                            (old_chunk.offset, chunk.offset, chunk.uncompressed_size)
+                        {
+                            use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
+                            // Read from old file, write to staging file
+                            let mut buf = vec![0u8; size as usize];
+                            let mut of = old_file.lock().await;
+                            of.seek(std::io::SeekFrom::Start(old_offset)).await?;
+                            if of.read_exact(&mut buf).await.is_ok() {
+                                let mut nf = file.lock().await;
+                                nf.seek(std::io::SeekFrom::Start(new_offset)).await?;
+                                nf.write_all(&buf).await?;
+                                copied += 1;
+                            }
+                        }
+                    }
+                }
+
+                if copied > 0 {
+                    tracing::debug!("{}: reused {copied} of {} chunks from previous version", task.filename, task.chunks.len());
+                }
+            }
+        }
+
         let mut handles = Vec::new();
 
         for chunk in &task.chunks {
@@ -236,6 +290,13 @@ impl DepotJob {
                     continue;
                 }
             };
+
+            // Skip chunks that were already copied from the previous version
+            if let Some(ref old_chunks) = task.old_chunks {
+                if task.path.exists() && old_chunks.iter().any(|oc| oc.id == Some(chunk_id)) {
+                    continue;
+                }
+            }
 
             let job = self.clone_shared();
             let offset = chunk.offset;
@@ -324,6 +385,7 @@ impl DepotJob {
             event_tx: self.event_tx.clone(),
             verify: self.verify,
             file_filter: None, // filter only needed at the top-level download loop
+            previous_manifest: None,
         }
     }
 }
@@ -402,6 +464,8 @@ struct FileTask {
     size: Option<u64>,
     flags: Option<u32>,
     chunks: Vec<ManifestChunk>,
+    /// Chunks from the previously installed manifest (for delta comparison).
+    old_chunks: Option<Vec<ManifestChunk>>,
     filename: String,
 }
 
@@ -418,6 +482,7 @@ pub struct DepotJobBuilder {
     event_tx: Option<mpsc::UnboundedSender<DownloadEvent>>,
     verify: bool,
     file_filter: Option<FileFilter>,
+    previous_manifest: Option<DepotManifest>,
 }
 
 impl DepotJobBuilder {
@@ -471,6 +536,11 @@ impl DepotJobBuilder {
         self
     }
 
+    pub fn previous_manifest(mut self, manifest: Option<DepotManifest>) -> Self {
+        self.previous_manifest = manifest;
+        self
+    }
+
     pub fn build(self) -> Result<DepotJob, &'static str> {
         Ok(DepotJob {
             cdn: self.cdn.ok_or("cdn is required")?,
@@ -483,6 +553,7 @@ impl DepotJobBuilder {
             event_tx: self.event_tx.ok_or("event_sender is required")?,
             verify: self.verify,
             file_filter: self.file_filter,
+            previous_manifest: self.previous_manifest,
         })
     }
 }

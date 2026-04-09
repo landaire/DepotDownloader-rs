@@ -546,6 +546,23 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             None
         };
 
+        // Load previous manifest for delta downloads
+        let config_path = steam_client::manifest::DepotConfig::path_for(&install_dir);
+        let depot_config = steam_client::manifest::DepotConfig::load(&config_path);
+        let previous_manifest = depot_config
+            .get_installed(depot_id)
+            .and_then(|old_id| {
+                if old_id == manifest_id {
+                    None // Same manifest, no delta needed
+                } else {
+                    cache.load(depot_id, old_id)
+                }
+            });
+
+        if previous_manifest.is_some() {
+            tracing::info!("Delta download: comparing against previous manifest");
+        }
+
         let job = steam_client::download::DepotJob::builder()
             .cdn(cdn.clone())
             .server(cdn_servers[0].clone())
@@ -557,6 +574,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             .event_sender(event_tx)
             .verify(args.verify)
             .file_filter(file_filter)
+            .previous_manifest(previous_manifest)
             .build()
             .map_err(|e| -> BoxError { e.into() })?;
 
