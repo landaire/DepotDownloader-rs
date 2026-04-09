@@ -142,7 +142,7 @@ impl SteamClient<LoggedIn> {
                     CMsgClientGetDepotDecryptionKeyResponse::decode(&incoming.body[..])?;
 
                 let eresult = body.eresult;
-                if eresult != Some(1) {
+                if eresult != Some(crate::enums::EResult::OK as i32) {
                     return Err(ConnectionError::DepotAccessDenied {
                         depot_id: depot_id.0,
                         eresult: eresult.unwrap_or(0),
@@ -194,7 +194,7 @@ impl SteamClient<LoggedIn> {
                 let body = CMsgClientCheckAppBetaPasswordResponse::decode(&incoming.body[..])?;
 
                 let eresult = body.eresult;
-                if eresult != Some(1) {
+                if eresult != Some(crate::enums::EResult::OK as i32) {
                     return Err(ConnectionError::DepotAccessDenied {
                         depot_id: app_id.0,
                         eresult: eresult.unwrap_or(0),

@@ -155,7 +155,7 @@ impl SteamClient<Connected> {
 
         let eresult = read_u32_le(&mut reader)?;
 
-        if eresult != 1 {
+        if eresult != crate::enums::EResult::OK as u32 {
             return Err(ConnectionError::EncryptionFailed { eresult }.into());
         }
 
@@ -185,7 +185,7 @@ impl SteamClient<Encrypted> {
                 let eresult = body.eresult
                     .or(incoming.header.eresult)
                     .unwrap_or(0);
-                if eresult != 1 {
+                if eresult != crate::enums::EResult::OK as i32 {
                     return Err(ConnectionError::LogonFailed { eresult }.into());
                 }
 

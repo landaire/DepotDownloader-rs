@@ -176,7 +176,7 @@ async fn do_login(
         let logon = steam::generated::CMsgClientLogon {
             protocol_version: Some(65581),
             cell_id: Some(opts.cell_id.unwrap_or(0)),
-            client_os_type: Some(203),
+            client_os_type: Some(steam::enums::EOSType::Windows11 as u32),
             client_language: Some("english".to_string()),
             access_token: Some(access_token),
             account_name: Some(username.clone()),
@@ -196,7 +196,7 @@ async fn do_login(
         let logon = steam::generated::CMsgClientLogon {
             protocol_version: Some(65581),
             cell_id: Some(opts.cell_id.unwrap_or(0)),
-            client_os_type: Some(203),
+            client_os_type: Some(steam::enums::EOSType::Windows11 as u32),
             client_language: Some("english".to_string()),
             access_token: Some(access_token),
             ..Default::default()
@@ -212,7 +212,7 @@ async fn do_login(
         let logon_body = build_logon_body(opts);
         let mut logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
 
-        let anon_id = steam::types::SteamId::from_parts(1, 10, 0, 0);
+        let anon_id = steam::types::SteamId::from_parts(steam::enums::EUniverse::Public as u8, steam::enums::EAccountType::AnonUser as u8, 0, 0);
         logon_msg.header.steamid = Some(anon_id.raw());
         logon_msg.header.client_sessionid = Some(0);
 
@@ -922,7 +922,7 @@ fn build_logon_body(opts: &Options) -> Vec<u8> {
     let logon = steam::generated::CMsgClientLogon {
         protocol_version: Some(65581),
         cell_id: Some(opts.cell_id.unwrap_or(0)),
-        client_os_type: Some(203),
+        client_os_type: Some(steam::enums::EOSType::Windows11 as u32),
         client_language: Some("english".to_string()),
         account_name: opts.auth.username.clone(),
         ..Default::default()

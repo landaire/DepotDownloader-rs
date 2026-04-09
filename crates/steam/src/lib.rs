@@ -1,5 +1,6 @@
 pub mod apps;
 pub mod auth;
+pub mod enums;
 pub mod cdn;
 pub mod client;
 pub mod connection;

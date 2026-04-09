@@ -2,10 +2,10 @@
 //!
 //! A manifest is a sequence of magic-delimited protobuf sections:
 //! ```text
-//! [PAYLOAD_MAGIC]  [len: u32] [ContentManifestPayload]
-//! [METADATA_MAGIC] [len: u32] [ContentManifestMetadata]
-//! [SIGNATURE_MAGIC][len: u32] [ContentManifestSignature]
-//! [EOF_MAGIC]
+//! [ManifestMagic::PayloadV5 as u32]  [len: u32] [ContentManifestPayload]
+//! [ManifestMagic::Metadata as u32] [len: u32] [ContentManifestMetadata]
+//! [ManifestMagic::Signature as u32][len: u32] [ContentManifestSignature]
+//! [ManifestMagic::EndOfManifest as u32]
 //! ```
 
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -15,11 +15,7 @@ use crate::depot::{ChunkId, DepotId, DepotKey, ManifestId};
 use crate::error::ManifestError;
 use crate::generated::{ContentManifestMetadata, ContentManifestPayload, ContentManifestSignature};
 
-const PAYLOAD_MAGIC: u32 = 0x71F6_17D0;
-const METADATA_MAGIC: u32 = 0x1F48_12BE;
-const SIGNATURE_MAGIC: u32 = 0x1B81_B817;
-const EOF_MAGIC: u32 = 0x32C4_15AB;
-const V4_MAGIC: u32 = 0x1634_9781;
+use crate::enums::ManifestMagic;
 
 /// A parsed depot manifest.
 #[derive(Debug, Clone)]
@@ -100,7 +96,7 @@ impl DepotManifest {
 
         let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
 
-        if magic == V4_MAGIC {
+        if magic == ManifestMagic::V4 as u32 {
             Self::parse_v4(data)
         } else {
             Self::parse_v5(data)
@@ -250,7 +246,7 @@ impl DepotManifest {
                 .read_u32::<LittleEndian>()
                 .map_err(|_| ManifestError::MissingSection("unexpected EOF reading magic"))?;
 
-            if magic == EOF_MAGIC {
+            if magic == ManifestMagic::EndOfManifest as u32 {
                 break;
             }
 
@@ -265,20 +261,20 @@ impl DepotManifest {
             let section_data = &reader[..len];
             reader = &reader[len..];
 
-            match magic {
-                PAYLOAD_MAGIC => {
+            match ManifestMagic::from_u32(magic) {
+                Some(ManifestMagic::PayloadV5) => {
                     payload = Some(ContentManifestPayload::decode(section_data)
                         .map_err(|_| ManifestError::MissingSection("payload decode failed"))?);
                 }
-                METADATA_MAGIC => {
+                Some(ManifestMagic::Metadata) => {
                     metadata = Some(ContentManifestMetadata::decode(section_data)
                         .map_err(|_| ManifestError::MissingSection("metadata decode failed"))?);
                 }
-                SIGNATURE_MAGIC => {
+                Some(ManifestMagic::Signature) => {
                     _signature = Some(ContentManifestSignature::decode(section_data)
                         .map_err(|_| ManifestError::MissingSection("signature decode failed"))?);
                 }
-                other => return Err(ManifestError::InvalidMagic(other)),
+                _ => return Err(ManifestError::InvalidMagic(magic)),
             }
         }
 
@@ -419,22 +415,22 @@ mod tests {
         let mut buf = Vec::new();
 
         let payload_bytes = payload.encode_to_vec();
-        buf.extend_from_slice(&PAYLOAD_MAGIC.to_le_bytes());
+        buf.extend_from_slice(&(ManifestMagic::PayloadV5 as u32).to_le_bytes());
         buf.extend_from_slice(&(payload_bytes.len() as u32).to_le_bytes());
         buf.extend_from_slice(&payload_bytes);
 
         let metadata_bytes = metadata.encode_to_vec();
-        buf.extend_from_slice(&METADATA_MAGIC.to_le_bytes());
+        buf.extend_from_slice(&(ManifestMagic::Metadata as u32).to_le_bytes());
         buf.extend_from_slice(&(metadata_bytes.len() as u32).to_le_bytes());
         buf.extend_from_slice(&metadata_bytes);
 
         let sig = ContentManifestSignature { signature: None };
         let sig_bytes = sig.encode_to_vec();
-        buf.extend_from_slice(&SIGNATURE_MAGIC.to_le_bytes());
+        buf.extend_from_slice(&(ManifestMagic::Signature as u32).to_le_bytes());
         buf.extend_from_slice(&(sig_bytes.len() as u32).to_le_bytes());
         buf.extend_from_slice(&sig_bytes);
 
-        buf.extend_from_slice(&EOF_MAGIC.to_le_bytes());
+        buf.extend_from_slice(&(ManifestMagic::EndOfManifest as u32).to_le_bytes());
         buf
     }
 

@@ -115,7 +115,7 @@ impl DepotJob {
             }
 
             // Skip directories (flag 0x40 = directory)
-            if file.flags.is_some_and(|f| f & 0x40 != 0) {
+            if file.flags.is_some_and(|f| steam::enums::DepotFileFlags(f).is_directory()) {
                 send_event!(self.event_tx, DownloadEvent::FileSkipped {
                     depot_id: self.depot_id,
                     filename,
@@ -429,16 +429,13 @@ async fn verify_chunks(
 }
 
 /// EDepotFileFlag::Executable = 0x04
-#[cfg(unix)]
-const FLAG_EXECUTABLE: u32 = 0x04;
-
 /// Set Unix executable permissions if the file has the Executable flag.
 fn set_executable_if_needed(task: &FileTask) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if task.flags.is_some_and(|f| f & FLAG_EXECUTABLE != 0) {
+        if task.flags.is_some_and(|f| steam::enums::DepotFileFlags(f).is_executable()) {
             if let Ok(metadata) = std::fs::metadata(&task.path) {
                 let mut perms = metadata.permissions();
                 let mode = perms.mode();
