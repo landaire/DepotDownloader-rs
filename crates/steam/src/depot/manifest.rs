@@ -19,6 +19,7 @@ const PAYLOAD_MAGIC: u32 = 0x71F6_17D0;
 const METADATA_MAGIC: u32 = 0x1F48_12BE;
 const SIGNATURE_MAGIC: u32 = 0x1B81_B817;
 const EOF_MAGIC: u32 = 0x32C4_15AB;
+const V4_MAGIC: u32 = 0x1634_9781;
 
 /// A parsed depot manifest.
 #[derive(Debug, Clone)]
@@ -58,7 +59,155 @@ pub struct ManifestChunk {
 
 impl DepotManifest {
     /// Parse a manifest from raw bytes (after ZIP decompression).
+    ///
+    /// Supports both v4 (binary) and v5 (protobuf) manifest formats.
     pub fn parse(data: &[u8]) -> Result<Self, ManifestError> {
+        if data.len() < 4 {
+            return Err(ManifestError::MissingSection("manifest too short"));
+        }
+
+        let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+
+        if magic == V4_MAGIC {
+            Self::parse_v4(data)
+        } else {
+            Self::parse_v5(data)
+        }
+    }
+
+    /// Parse a v4 (binary) manifest.
+    ///
+    /// Layout:
+    /// ```text
+    /// [4] magic (0x16349781)
+    /// [4] version (must be 4)
+    /// [4] depot_id
+    /// [8] manifest_gid
+    /// [4] creation_time (unix)
+    /// [4] filenames_encrypted (bool as u32)
+    /// [8] total_uncompressed_size
+    /// [8] total_compressed_size
+    /// [4] chunk_count
+    /// [4] file_entry_count
+    /// [4] file_mapping_size (total bytes of file mapping data)
+    /// [4] encrypted_crc
+    /// [4] decrypted_crc
+    /// [4] flags
+    /// [...] file mappings (variable, consumed by file_mapping_size)
+    /// [4] end marker (must match magic)
+    /// ```
+    fn parse_v4(data: &[u8]) -> Result<Self, ManifestError> {
+        use std::io::Read;
+
+        let mut r = data;
+        let _magic = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 header"))?;
+        let version = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 version"))?;
+
+        if version != 4 {
+            return Err(ManifestError::InvalidMagic(version));
+        }
+
+        let depot_id = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 depot_id"))?;
+        let manifest_gid = r.read_u64::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 manifest_gid"))?;
+        let creation_time = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 creation_time"))?;
+        let filenames_encrypted = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 filenames_encrypted"))? != 0;
+        let total_uncompressed = r.read_u64::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 total_uncompressed"))?;
+        let total_compressed = r.read_u64::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 total_compressed"))?;
+        let _chunk_count = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 chunk_count"))?;
+        let _file_entry_count = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 file_entry_count"))?;
+        let file_mapping_size = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 file_mapping_size"))? as usize;
+        let _encrypted_crc = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 encrypted_crc"))?;
+        let _decrypted_crc = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 decrypted_crc"))?;
+        let _flags = r.read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 flags"))?;
+
+        // Parse file mappings
+        let mut files = Vec::new();
+        let mut consumed = 0usize;
+
+        while consumed < file_mapping_size {
+            let start = r.len();
+
+            // Null-terminated filename
+            let nul_pos = r.iter().position(|&b| b == 0)
+                .ok_or(ManifestError::MissingSection("v4 filename nul terminator"))?;
+            let filename = String::from_utf8_lossy(&r[..nul_pos]).into_owned();
+            r = &r[nul_pos + 1..];
+
+            let size = r.read_u64::<LittleEndian>()
+                .map_err(|_| ManifestError::MissingSection("v4 file size"))?;
+            let flags = r.read_u32::<LittleEndian>()
+                .map_err(|_| ManifestError::MissingSection("v4 file flags"))?;
+            let mut hash_content = [0u8; 20];
+            r.read_exact(&mut hash_content)
+                .map_err(|_| ManifestError::MissingSection("v4 hash_content"))?;
+            let mut _hash_filename = [0u8; 20];
+            r.read_exact(&mut _hash_filename)
+                .map_err(|_| ManifestError::MissingSection("v4 hash_filename"))?;
+            let num_chunks = r.read_u32::<LittleEndian>()
+                .map_err(|_| ManifestError::MissingSection("v4 num_chunks"))?;
+
+            let mut chunks = Vec::with_capacity(num_chunks as usize);
+            for _ in 0..num_chunks {
+                let mut sha = [0u8; 20];
+                r.read_exact(&mut sha)
+                    .map_err(|_| ManifestError::MissingSection("v4 chunk sha"))?;
+                let checksum = r.read_u32::<LittleEndian>()
+                    .map_err(|_| ManifestError::MissingSection("v4 chunk checksum"))?;
+                let offset = r.read_u64::<LittleEndian>()
+                    .map_err(|_| ManifestError::MissingSection("v4 chunk offset"))?;
+                let uncompressed_size = r.read_u32::<LittleEndian>()
+                    .map_err(|_| ManifestError::MissingSection("v4 chunk uncompressed"))?;
+                let compressed_size = r.read_u32::<LittleEndian>()
+                    .map_err(|_| ManifestError::MissingSection("v4 chunk compressed"))?;
+
+                chunks.push(ManifestChunk {
+                    id: Some(ChunkId(sha)),
+                    checksum: Some(checksum),
+                    offset: Some(offset),
+                    compressed_size: Some(compressed_size),
+                    uncompressed_size: Some(uncompressed_size),
+                });
+            }
+
+            files.push(ManifestFile {
+                filename: Some(filename),
+                size: Some(size),
+                flags: Some(flags),
+                sha_content: Some(hash_content),
+                chunks,
+                link_target: None,
+            });
+
+            consumed += start - r.len();
+        }
+
+        Ok(Self {
+            depot_id: Some(DepotId(depot_id)),
+            manifest_id: Some(ManifestId(manifest_gid)),
+            creation_time: Some(creation_time),
+            filenames_encrypted,
+            total_uncompressed_size: Some(total_uncompressed),
+            total_compressed_size: Some(total_compressed),
+            files,
+        })
+    }
+
+    /// Parse a v5 (protobuf) manifest.
+    fn parse_v5(data: &[u8]) -> Result<Self, ManifestError> {
         let mut reader = data;
         let mut payload = None;
         let mut metadata = None;

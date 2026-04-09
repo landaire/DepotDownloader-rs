@@ -26,7 +26,6 @@ fn encrypted_manifest() {
 }
 
 #[test]
-#[ignore = "v4 manifest format not yet implemented"]
 fn v4_manifest() {
     let data = load("depot_440_1118032470228587934_v4.manifest");
     let manifest = DepotManifest::parse(&data).expect("should parse");
