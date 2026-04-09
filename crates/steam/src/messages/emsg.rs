@@ -39,6 +39,8 @@ impl EMsg {
     pub const CLIENT_LOGON: Self = Self(5514);
 
 
+    pub const CLIENT_CHECK_APP_BETA_PASSWORD: Self = Self(5450);
+    pub const CLIENT_CHECK_APP_BETA_PASSWORD_RESPONSE: Self = Self(5451);
     pub const CLIENT_GET_DEPOT_DECRYPTION_KEY: Self = Self(5438);
     pub const CLIENT_GET_DEPOT_DECRYPTION_KEY_RESPONSE: Self = Self(5439);
     pub const CLIENT_GET_CDN_AUTH_TOKEN: Self = Self(5546);
@@ -88,6 +90,8 @@ impl std::fmt::Display for EMsg {
             Self::CHANNEL_ENCRYPT_REQUEST => "ChannelEncryptRequest",
             Self::CHANNEL_ENCRYPT_RESPONSE => "ChannelEncryptResponse",
             Self::CHANNEL_ENCRYPT_RESULT => "ChannelEncryptResult",
+            Self::CLIENT_CHECK_APP_BETA_PASSWORD => "ClientCheckAppBetaPassword",
+            Self::CLIENT_CHECK_APP_BETA_PASSWORD_RESPONSE => "ClientCheckAppBetaPasswordResponse",
             Self::CLIENT_LOGON => "ClientLogon",
             Self::CLIENT_GET_DEPOT_DECRYPTION_KEY => "ClientGetDepotDecryptionKey",
             Self::CLIENT_GET_DEPOT_DECRYPTION_KEY_RESPONSE => {

@@ -189,6 +189,24 @@ async fn do_login(
         let (client, _logon_resp) = client.login(logon_msg).await?;
         tracing::info!("Logged in successfully as {username}");
         Ok(client)
+    } else if opts.auth.qr {
+        tracing::info!("Starting QR code login...");
+        let access_token = authenticate_qr(&client).await?;
+
+        let logon = steam::generated::CMsgClientLogon {
+            protocol_version: Some(65581),
+            cell_id: Some(opts.cell_id.unwrap_or(0)),
+            client_os_type: Some(203),
+            client_language: Some("english".to_string()),
+            access_token: Some(access_token),
+            ..Default::default()
+        };
+        let logon_body = logon.encode_to_vec();
+        let logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+
+        let (client, _logon_resp) = client.login(logon_msg).await?;
+        tracing::info!("Logged in successfully via QR code");
+        Ok(client)
     } else {
         tracing::info!("Logging in anonymously...");
         let logon_body = build_logon_body(opts);
@@ -201,6 +219,50 @@ async fn do_login(
         let (client, _logon_resp) = client.login(logon_msg).await?;
         tracing::info!("Logged in anonymously");
         Ok(client)
+    }
+}
+
+/// QR code authentication (pre-logon, on Encrypted state).
+async fn authenticate_qr(
+    client: &steam::client::SteamClient<steam::client::Encrypted>,
+) -> Result<String, BoxError> {
+    let request = steam::generated::CAuthenticationBeginAuthSessionViaQrRequest {
+        device_friendly_name: Some("depotdownloader-rs".to_string()),
+        platform_type: Some(2), // Win32
+        ..Default::default()
+    };
+
+    let session = client.begin_auth_session_via_qr(request).await?;
+
+    let challenge_url = session.challenge_url.as_deref().ok_or("no QR challenge URL")?;
+    let client_id = session.client_id.ok_or("no client_id")?;
+    let request_id = session.request_id.as_ref().ok_or("no request_id")?;
+
+    // Render QR code to terminal
+    let qr = qrcode::QrCode::new(challenge_url.as_bytes())
+        .map_err(|e| format!("Failed to generate QR code: {e}"))?;
+    let image = qr.render::<char>()
+        .quiet_zone(false)
+        .module_dimensions(2, 1)
+        .build();
+    eprintln!("\nScan this QR code with the Steam mobile app:\n");
+    eprintln!("{image}");
+    eprintln!("\nOr open: {challenge_url}\n");
+    eprintln!("Waiting for confirmation...");
+
+    loop {
+        let interval = session.poll_interval.unwrap_or(5.0);
+        tokio::time::sleep(std::time::Duration::from_secs_f32(interval)).await;
+
+        match client.poll_auth_session(client_id, request_id).await? {
+            Some(tokens) => {
+                tracing::info!("QR authentication successful");
+                return Ok(tokens.refresh_token);
+            }
+            None => {
+                tracing::debug!("Waiting for QR scan...");
+            }
+        }
     }
 }
 

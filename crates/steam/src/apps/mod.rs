@@ -7,6 +7,7 @@ use crate::client::msg::ClientMsg;
 use crate::depot::{AppId, DepotId, DepotKey};
 use crate::error::{ConnectionError, Error};
 use crate::generated::{
+    CMsgClientCheckAppBetaPassword, CMsgClientCheckAppBetaPasswordResponse,
     CMsgClientGetDepotDecryptionKey, CMsgClientGetDepotDecryptionKeyResponse,
     CMsgClientPicsAccessTokenRequest, CMsgClientPicsAccessTokenResponse,
     CMsgClientPicsProductInfoRequest, CMsgClientPicsProductInfoResponse,
@@ -169,4 +170,56 @@ impl SteamClient<LoggedIn> {
             }
         }
     }
+
+    /// Check a beta branch password. Returns the list of branches the password
+    /// unlocks, with their decrypted names.
+    pub async fn check_beta_password(
+        &self,
+        app_id: AppId,
+        password: &str,
+    ) -> Result<Vec<BetaBranch>, Error> {
+        let encoded = CMsgClientCheckAppBetaPassword {
+            app_id: Some(app_id.0),
+            betapassword: Some(password.to_string()),
+            language: None,
+        }
+        .encode_to_vec();
+
+        let msg = ClientMsg::with_body(EMsg::CLIENT_CHECK_APP_BETA_PASSWORD, &encoded);
+        self.send_msg(&msg).await?;
+
+        loop {
+            let incoming = self.recv_msg().await?;
+            if incoming.emsg == EMsg::CLIENT_CHECK_APP_BETA_PASSWORD_RESPONSE {
+                let body = CMsgClientCheckAppBetaPasswordResponse::decode(&incoming.body[..])?;
+
+                let eresult = body.eresult;
+                if eresult != Some(1) {
+                    return Err(ConnectionError::DepotAccessDenied {
+                        depot_id: app_id.0,
+                        eresult: eresult.unwrap_or(0),
+                    }
+                    .into());
+                }
+
+                return Ok(body
+                    .betapasswords
+                    .into_iter()
+                    .map(|b| BetaBranch {
+                        name: b.betaname,
+                        password: b.betapassword,
+                        description: b.betadescription,
+                    })
+                    .collect());
+            }
+        }
+    }
+}
+
+/// A beta branch unlocked by a password.
+#[derive(Debug, Clone)]
+pub struct BetaBranch {
+    pub name: Option<String>,
+    pub password: Option<String>,
+    pub description: Option<String>,
 }

@@ -70,7 +70,7 @@ impl FileFilter {
         Ok(Self::Regex(re))
     }
 
-    fn matches(&self, filename: &str) -> bool {
+    pub fn matches(&self, filename: &str) -> bool {
         let normalized = filename.replace('\\', "/");
         match self {
             Self::FileList(list) => list

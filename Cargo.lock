@@ -371,6 +371,7 @@ dependencies = [
  "indicatif",
  "jiff",
  "prost",
+ "qrcode",
  "reqwest",
  "rsa",
  "serde",
