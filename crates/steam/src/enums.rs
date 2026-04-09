@@ -1,102 +1,133 @@
-/// Steam API result codes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
-pub enum EResult {
-    Invalid = 0,
-    OK = 1,
-    Fail = 2,
-    NoConnection = 3,
-    InvalidPassword = 5,
-    LoggedInElsewhere = 6,
-    InvalidProtocolVer = 7,
-    InvalidParam = 8,
-    FileNotFound = 9,
-    Busy = 10,
-    InvalidState = 11,
-    InvalidName = 12,
-    InvalidEmail = 13,
-    DuplicateName = 14,
-    AccessDenied = 15,
-    Timeout = 16,
-    Banned = 17,
-    AccountNotFound = 18,
-    InvalidSteamID = 19,
-    ServiceUnavailable = 20,
-    NotLoggedOn = 21,
-    Pending = 22,
-    EncryptionFailure = 23,
-    InsufficientPrivilege = 24,
-    LimitExceeded = 25,
-    Revoked = 26,
-    Expired = 27,
-    AlreadyRedeemed = 28,
-    DuplicateRequest = 29,
-    AlreadyOwned = 30,
-    IPNotFound = 31,
-    PersistFailed = 32,
-    LockingFailed = 33,
-    LogonSessionReplaced = 34,
-    AccountLoginDeniedNeedTwoFactor = 85,
-    AccountLoginDeniedThrottle = 87,
-    TwoFactorCodeMismatch = 88,
-    TwoFactorActivationCodeMismatch = 89,
-    RateLimitExceeded = 84,
+/// Steam API error result codes. Success (EResult=1) is not represented -
+/// use `EResultError::from_i32(v)` which returns `Ok(())` for success
+/// and `Err(EResultError)` for any failure code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum EResultError {
+    #[error("invalid (0)")]
+    Invalid,
+    #[error("fail (2)")]
+    Fail,
+    #[error("no connection (3)")]
+    NoConnection,
+    #[error("invalid password (5)")]
+    InvalidPassword,
+    #[error("logged in elsewhere (6)")]
+    LoggedInElsewhere,
+    #[error("invalid protocol version (7)")]
+    InvalidProtocolVer,
+    #[error("invalid param (8)")]
+    InvalidParam,
+    #[error("file not found (9)")]
+    FileNotFound,
+    #[error("busy (10)")]
+    Busy,
+    #[error("invalid state (11)")]
+    InvalidState,
+    #[error("invalid name (12)")]
+    InvalidName,
+    #[error("invalid email (13)")]
+    InvalidEmail,
+    #[error("duplicate name (14)")]
+    DuplicateName,
+    #[error("access denied (15)")]
+    AccessDenied,
+    #[error("timeout (16)")]
+    Timeout,
+    #[error("banned (17)")]
+    Banned,
+    #[error("account not found (18)")]
+    AccountNotFound,
+    #[error("invalid steam ID (19)")]
+    InvalidSteamID,
+    #[error("service unavailable (20)")]
+    ServiceUnavailable,
+    #[error("not logged on (21)")]
+    NotLoggedOn,
+    #[error("pending (22)")]
+    Pending,
+    #[error("encryption failure (23)")]
+    EncryptionFailure,
+    #[error("insufficient privilege (24)")]
+    InsufficientPrivilege,
+    #[error("limit exceeded (25)")]
+    LimitExceeded,
+    #[error("revoked (26)")]
+    Revoked,
+    #[error("expired (27)")]
+    Expired,
+    #[error("already redeemed (28)")]
+    AlreadyRedeemed,
+    #[error("duplicate request (29)")]
+    DuplicateRequest,
+    #[error("already owned (30)")]
+    AlreadyOwned,
+    #[error("IP not found (31)")]
+    IPNotFound,
+    #[error("persist failed (32)")]
+    PersistFailed,
+    #[error("locking failed (33)")]
+    LockingFailed,
+    #[error("logon session replaced (34)")]
+    LogonSessionReplaced,
+    #[error("rate limit exceeded (84)")]
+    RateLimitExceeded,
+    #[error("two factor required (85)")]
+    TwoFactorRequired,
+    #[error("login denied, throttled (87)")]
+    LoginDeniedThrottle,
+    #[error("two factor code mismatch (88)")]
+    TwoFactorCodeMismatch,
+    #[error("two factor activation code mismatch (89)")]
+    TwoFactorActivationCodeMismatch,
+    #[error("unknown error ({0})")]
+    Unknown(i32),
 }
 
-impl EResult {
-    pub fn from_i32(v: i32) -> Option<Self> {
-        Some(match v {
-            0 => Self::Invalid,
-            1 => Self::OK,
-            2 => Self::Fail,
-            3 => Self::NoConnection,
-            5 => Self::InvalidPassword,
-            6 => Self::LoggedInElsewhere,
-            7 => Self::InvalidProtocolVer,
-            8 => Self::InvalidParam,
-            9 => Self::FileNotFound,
-            10 => Self::Busy,
-            11 => Self::InvalidState,
-            12 => Self::InvalidName,
-            13 => Self::InvalidEmail,
-            14 => Self::DuplicateName,
-            15 => Self::AccessDenied,
-            16 => Self::Timeout,
-            17 => Self::Banned,
-            18 => Self::AccountNotFound,
-            19 => Self::InvalidSteamID,
-            20 => Self::ServiceUnavailable,
-            21 => Self::NotLoggedOn,
-            22 => Self::Pending,
-            23 => Self::EncryptionFailure,
-            24 => Self::InsufficientPrivilege,
-            25 => Self::LimitExceeded,
-            26 => Self::Revoked,
-            27 => Self::Expired,
-            28 => Self::AlreadyRedeemed,
-            29 => Self::DuplicateRequest,
-            30 => Self::AlreadyOwned,
-            31 => Self::IPNotFound,
-            32 => Self::PersistFailed,
-            33 => Self::LockingFailed,
-            34 => Self::LogonSessionReplaced,
-            84 => Self::RateLimitExceeded,
-            85 => Self::AccountLoginDeniedNeedTwoFactor,
-            87 => Self::AccountLoginDeniedThrottle,
-            88 => Self::TwoFactorCodeMismatch,
-            89 => Self::TwoFactorActivationCodeMismatch,
-            _ => return None,
-        })
-    }
-
-    pub fn is_ok(self) -> bool {
-        self == Self::OK
-    }
-}
-
-impl std::fmt::Display for EResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} ({})", self, *self as i32)
+impl EResultError {
+    /// Returns `Ok(())` for success (1), `Err` for everything else.
+    pub fn from_i32(v: i32) -> Result<(), Self> {
+        match v {
+            1 => Ok(()),
+            0 => Err(Self::Invalid),
+            2 => Err(Self::Fail),
+            3 => Err(Self::NoConnection),
+            5 => Err(Self::InvalidPassword),
+            6 => Err(Self::LoggedInElsewhere),
+            7 => Err(Self::InvalidProtocolVer),
+            8 => Err(Self::InvalidParam),
+            9 => Err(Self::FileNotFound),
+            10 => Err(Self::Busy),
+            11 => Err(Self::InvalidState),
+            12 => Err(Self::InvalidName),
+            13 => Err(Self::InvalidEmail),
+            14 => Err(Self::DuplicateName),
+            15 => Err(Self::AccessDenied),
+            16 => Err(Self::Timeout),
+            17 => Err(Self::Banned),
+            18 => Err(Self::AccountNotFound),
+            19 => Err(Self::InvalidSteamID),
+            20 => Err(Self::ServiceUnavailable),
+            21 => Err(Self::NotLoggedOn),
+            22 => Err(Self::Pending),
+            23 => Err(Self::EncryptionFailure),
+            24 => Err(Self::InsufficientPrivilege),
+            25 => Err(Self::LimitExceeded),
+            26 => Err(Self::Revoked),
+            27 => Err(Self::Expired),
+            28 => Err(Self::AlreadyRedeemed),
+            29 => Err(Self::DuplicateRequest),
+            30 => Err(Self::AlreadyOwned),
+            31 => Err(Self::IPNotFound),
+            32 => Err(Self::PersistFailed),
+            33 => Err(Self::LockingFailed),
+            34 => Err(Self::LogonSessionReplaced),
+            84 => Err(Self::RateLimitExceeded),
+            85 => Err(Self::TwoFactorRequired),
+            87 => Err(Self::LoginDeniedThrottle),
+            88 => Err(Self::TwoFactorCodeMismatch),
+            89 => Err(Self::TwoFactorActivationCodeMismatch),
+            other => Err(Self::Unknown(other)),
+        }
     }
 }
 

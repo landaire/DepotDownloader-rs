@@ -154,10 +154,8 @@ impl SteamClient<Connected> {
         }
 
         let eresult = read_u32_le(&mut reader)?;
-
-        if eresult != crate::enums::EResult::OK as u32 {
-            return Err(ConnectionError::EncryptionFailed { eresult }.into());
-        }
+        crate::enums::EResultError::from_i32(eresult as i32)
+            .map_err(ConnectionError::EncryptionFailed)?;
 
         *self.inner.cipher.lock().await = Some(SessionCipher::new(session_key));
 
@@ -185,8 +183,8 @@ impl SteamClient<Encrypted> {
                 let eresult = body.eresult
                     .or(incoming.header.eresult)
                     .unwrap_or(0);
-                if eresult != crate::enums::EResult::OK as i32 {
-                    return Err(ConnectionError::LogonFailed { eresult }.into());
+                if let Err(e) = crate::enums::EResultError::from_i32(eresult) {
+                    return Err(ConnectionError::LogonFailed(e).into());
                 }
 
                 if let Some(sid) = incoming.header.steamid {

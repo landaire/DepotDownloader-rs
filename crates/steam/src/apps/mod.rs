@@ -141,11 +141,10 @@ impl SteamClient<LoggedIn> {
                 let body =
                     CMsgClientGetDepotDecryptionKeyResponse::decode(&incoming.body[..])?;
 
-                let eresult = body.eresult;
-                if eresult != Some(crate::enums::EResult::OK as i32) {
+                if let Err(e) = crate::enums::EResultError::from_i32(body.eresult.unwrap_or(0)) {
                     return Err(ConnectionError::DepotAccessDenied {
                         depot_id: depot_id.0,
-                        eresult: eresult.unwrap_or(0),
+                        error: e,
                     }
                     .into());
                 }
@@ -193,11 +192,10 @@ impl SteamClient<LoggedIn> {
             if incoming.emsg == EMsg::CLIENT_CHECK_APP_BETA_PASSWORD_RESPONSE {
                 let body = CMsgClientCheckAppBetaPasswordResponse::decode(&incoming.body[..])?;
 
-                let eresult = body.eresult;
-                if eresult != Some(crate::enums::EResult::OK as i32) {
+                if let Err(e) = crate::enums::EResultError::from_i32(body.eresult.unwrap_or(0)) {
                     return Err(ConnectionError::DepotAccessDenied {
                         depot_id: app_id.0,
-                        eresult: eresult.unwrap_or(0),
+                        error: e,
                     }
                     .into());
                 }

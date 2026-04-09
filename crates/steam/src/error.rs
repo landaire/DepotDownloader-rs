@@ -37,14 +37,17 @@ pub enum ConnectionError {
     #[error("DNS resolution failed for {host}")]
     DnsResolutionFailed { host: String },
 
-    #[error("encryption handshake failed: EResult={eresult}")]
-    EncryptionFailed { eresult: u32 },
+    #[error("encryption handshake failed: {0}")]
+    EncryptionFailed(#[from] crate::enums::EResultError),
 
-    #[error("logon failed: EResult={eresult}")]
-    LogonFailed { eresult: i32 },
+    #[error("logon failed: {0}")]
+    LogonFailed(crate::enums::EResultError),
 
-    #[error("access denied for depot {depot_id}: EResult={eresult}")]
-    DepotAccessDenied { depot_id: u32, eresult: i32 },
+    #[error("access denied for depot {depot_id}: {error}")]
+    DepotAccessDenied {
+        depot_id: u32,
+        error: crate::enums::EResultError,
+    },
 
     #[error("parse error: {0}")]
     Parse(#[from] ParseError),
