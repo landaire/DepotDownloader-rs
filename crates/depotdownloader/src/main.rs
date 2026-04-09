@@ -1,5 +1,6 @@
 mod cli;
 mod download;
+mod errors;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -12,6 +13,7 @@ use steam::connection::{CmServer, fetch_cm_servers, default_cm_servers};
 use steam::depot::{AppId, CellId, DepotId, ManifestId};
 use steam::messages::EMsg;
 use crate::cli::{Action, Options, OutputFormat};
+use crate::errors::CliError;
 
 fn fmt_size(bytes: u64, raw: bool) -> String {
     if raw {
@@ -43,10 +45,8 @@ fn fmt_timestamp_u64(unix: u64) -> String {
         .unwrap_or_else(|_| unix.to_string())
 }
 
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
-
 #[tokio::main]
-async fn main() -> Result<(), BoxError> {
+async fn main() {
     let opts = Options::parse();
 
     let filter = if opts.debug {
@@ -60,12 +60,18 @@ async fn main() -> Result<(), BoxError> {
         .with_env_filter(filter)
         .init();
 
-    match opts.action {
+    let raw_errors = opts.raw_errors;
+    let result = match opts.action {
         Action::Info(ref args) => run_info(&opts, args).await,
         Action::Manifests(ref args) => run_manifests(&opts, args).await,
         Action::Files(ref args) => run_files(&opts, args).await,
         Action::Download(ref args) => run_download(&opts, args).await,
         Action::Workshop(ref args) => run_workshop(&opts, args).await,
+    };
+
+    if let Err(e) = result {
+        e.print(raw_errors);
+        std::process::exit(1);
     }
 }
 
@@ -95,7 +101,7 @@ async fn discover_servers(cell_id: u32) -> Vec<CmServer> {
 /// with a recording layer and flushes on success.
 async fn connect_and_login(
     opts: &Options,
-) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
+) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, CliError> {
     let cell_id = opts.cell_id.unwrap_or(0);
     let servers = discover_servers(cell_id).await;
 
@@ -121,7 +127,7 @@ async fn connect_and_login(
 async fn try_connect_login(
     server: &CmServer,
     opts: &Options,
-) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
+) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, CliError> {
     let (client, _events) = DisconnectedClient::new();
 
     let client = if let Some(capture_path) = &opts.capture {
@@ -142,7 +148,7 @@ async fn try_connect_login(
 async fn do_login(
     opts: &Options,
     client: steam::client::SteamClient<steam::client::Connected>,
-) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, BoxError> {
+) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, CliError> {
     tracing::info!("Connected, performing encryption handshake...");
 
     let client = client.encrypt().await?;
@@ -225,7 +231,7 @@ async fn do_login(
 /// QR code authentication (pre-logon, on Encrypted state).
 async fn authenticate_qr(
     client: &steam::client::SteamClient<steam::client::Encrypted>,
-) -> Result<String, BoxError> {
+) -> Result<String, CliError> {
     let request = steam::generated::CAuthenticationBeginAuthSessionViaQrRequest {
         device_friendly_name: Some("depotdownloader-rs".to_string()),
         platform_type: Some(2), // Win32
@@ -271,7 +277,7 @@ async fn authenticate_credentials(
     client: &steam::client::SteamClient<steam::client::Encrypted>,
     username: &str,
     opts: &Options,
-) -> Result<String, BoxError> {
+) -> Result<String, CliError> {
     use rsa::{Oaep, RsaPublicKey, BigUint};
     use sha1::Sha1;
 
@@ -385,7 +391,7 @@ async fn authenticate_credentials(
 use base64::Engine;
 
 
-async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), BoxError> {
+async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), CliError> {
     let app_id = AppId(args.app);
     let client = connect_and_login(opts).await?;
 
@@ -501,7 +507,7 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), BoxError> 
 }
 
 
-async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), BoxError> {
+async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), CliError> {
     let app_id = AppId(args.app);
     tracing::info!("Downloading app {app_id}");
 
@@ -568,7 +574,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
                             args.branch
                         );
                         discover_manifest_id(&app_infos, depot_id, "public")
-                            .ok_or_else(|| -> BoxError {
+                            .ok_or_else(|| -> CliError {
                                 format!("No manifest for depot {depot_id} on any branch").into()
                             })?
                     }
@@ -633,7 +639,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             Some(steam_client::download::FileFilter::from_filelist(std::path::Path::new(path))?)
         } else if let Some(ref pattern) = args.file_regex {
             Some(steam_client::download::FileFilter::from_regex(pattern)
-                .map_err(|e| -> BoxError { format!("Invalid regex: {e}").into() })?)
+                .map_err(|e| -> CliError { format!("Invalid regex: {e}").into() })?)
         } else {
             None
         };
@@ -668,7 +674,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
             .file_filter(file_filter)
             .previous_manifest(previous_manifest)
             .build()
-            .map_err(|e| -> BoxError { e.into() })?;
+            .map_err(|e| -> CliError { e.into() })?;
 
         job.download(&manifest).await?;
         drop(job); // Drop the event sender so the progress renderer sees channel close
@@ -690,7 +696,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
 }
 
 
-async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), BoxError> {
+async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), CliError> {
     let app_id = AppId(args.app);
     let client = connect_and_login(opts).await?;
 
@@ -723,7 +729,7 @@ async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), 
 }
 
 
-async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError> {
+async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), CliError> {
     let app_id = AppId(args.app);
     let depot_id = DepotId(args.depot);
 
@@ -736,7 +742,7 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
             // Auto-discover manifest ID from branch via PICS
             let app_infos = get_app_info(&client, &[app_id]).await?;
             discover_manifest_id(&app_infos, depot_id, &args.branch)
-                .ok_or_else(|| -> BoxError {
+                .ok_or_else(|| -> CliError {
                     format!(
                         "No manifest found for depot {depot_id} on branch '{}'",
                         args.branch
@@ -816,7 +822,7 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
 }
 
 
-async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), BoxError> {
+async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), CliError> {
     let pubfile_id = match (args.pubfile, args.ugc) {
         (Some(id), _) => id,
         (_, Some(id)) => id,
@@ -897,7 +903,7 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Bo
 async fn get_app_info(
     client: &steam::client::SteamClient<steam::client::LoggedIn>,
     app_ids: &[AppId],
-) -> Result<Vec<steam::apps::AppInfo>, BoxError> {
+) -> Result<Vec<steam::apps::AppInfo>, CliError> {
     let tokens = client.pics_get_access_tokens(app_ids).await?;
     tracing::debug!("Got {} PICS access token(s)", tokens.len());
 

@@ -30,6 +30,10 @@ pub struct Cli {
     /// Show raw byte sizes instead of human-readable (KiB, MiB, GiB).
     #[arg(long, global = true)]
     pub bytes: bool,
+
+    /// Show raw error details instead of human-friendly messages.
+    #[arg(long, global = true)]
+    pub raw_errors: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -328,6 +332,7 @@ pub struct Options {
     pub max_downloads: usize,
     pub capture: Option<String>,
     pub raw_bytes: bool,
+    pub raw_errors: bool,
 }
 
 #[derive(Debug)]
@@ -365,6 +370,7 @@ impl Options {
             max_downloads: cli.max_downloads,
             capture: cli.capture,
             raw_bytes: cli.bytes,
+            raw_errors: cli.raw_errors,
         }
     }
 
@@ -421,6 +427,7 @@ impl Options {
             max_downloads: cli.max_downloads,
             capture: None,
             raw_bytes: false,
+            raw_errors: false,
         }
     }
 }
