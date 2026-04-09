@@ -547,11 +547,14 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
         .map(|(&d, &m)| (d, ManifestId(m)))
         .collect();
 
-    let install_dir = args
+    let custom_output = args.output.is_some();
+    let base_dir = args
         .output
         .as_deref()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("depots"));
+
+    let build_id = discover_build_id(&app_infos, &args.branch);
 
     let cdn = steam::cdn::CdnClient::new()?;
 
@@ -563,28 +566,10 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
         let manifest_id = match explicit_manifests.get(&depot_id) {
             Some(&id) => id,
             None => {
-                // Auto-discover from PICS, with fallback to "public" branch
-                let found = discover_manifest_id(&app_infos, depot_id, &args.branch);
-
-                match found {
-                    Some(id) => id,
-                    None if args.branch != "public" => {
-                        tracing::warn!(
-                            "Branch '{}' not found for depot {depot_id}, trying 'public'",
-                            args.branch
-                        );
-                        discover_manifest_id(&app_infos, depot_id, "public")
-                            .ok_or_else(|| -> CliError {
-                                format!("No manifest for depot {depot_id} on any branch").into()
-                            })?
-                    }
-                    None => {
-                        return Err(format!(
-                            "No manifest for depot {depot_id} on branch '{}'",
-                            args.branch
-                        ).into());
-                    }
-                }
+                resolve_manifest_id(
+                    &client, &app_infos, app_id, depot_id,
+                    &args.branch, args.beta_password.as_deref(),
+                ).await?
             }
         };
 
@@ -600,7 +585,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
             .await?;
 
         // Try cached manifest first
-        let cache = steam_client::manifest::ManifestCache::default_for(&install_dir);
+        let cache = steam_client::manifest::ManifestCache::default_for(&base_dir);
         let mut manifest = if let Some(cached) = cache.load(depot_id, manifest_id) {
             cached
         } else {
@@ -645,7 +630,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
         };
 
         // Load previous manifest for delta downloads
-        let config_path = steam_client::manifest::DepotConfig::path_for(&install_dir);
+        let config_path = steam_client::manifest::DepotConfig::path_for(&base_dir);
         let depot_config = steam_client::manifest::DepotConfig::load(&config_path);
         let previous_manifest = depot_config
             .get_installed(depot_id)
@@ -667,7 +652,15 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
             .depot_id(depot_id)
             .depot_key(depot_key)
             .cdn_auth_token(cdn_auth.token)
-            .install_dir(install_dir.join(format!("{depot_id}")))
+            .install_dir(if custom_output {
+                base_dir.clone()
+            } else {
+                let mut p = base_dir.join(format!("{depot_id}"));
+                if let Some(bid) = build_id {
+                    p = p.join(bid.to_string());
+                }
+                p
+            })
             .max_downloads(opts.max_downloads)
             .event_sender(event_tx)
             .verify(args.verify)
@@ -681,7 +674,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
         progress_handle.await?;
 
         // Track installed manifest for future delta downloads
-        let config_path = steam_client::manifest::DepotConfig::path_for(&install_dir);
+        let config_path = steam_client::manifest::DepotConfig::path_for(&base_dir);
         let mut depot_config = steam_client::manifest::DepotConfig::load(&config_path);
         depot_config.set_installed(depot_id, manifest_id);
         if let Err(e) = depot_config.save(&config_path) {
@@ -887,10 +880,63 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
     // Otherwise, download via depot manifest using hcontent_file
     if let Some(hcontent) = details.hcontent_file {
         if hcontent > 0 {
-            tracing::info!("Downloading via depot manifest (hcontent={hcontent})");
-            // This would use the same download flow as regular depots
-            // but with the hcontent as the manifest ID
-            tracing::warn!("Workshop depot download not fully implemented yet");
+            let manifest_id = ManifestId(hcontent);
+            let depot_id = DepotId(app_id);
+            let cell_id = CellId(opts.cell_id.unwrap_or(0));
+
+            tracing::info!("Downloading via depot manifest (manifest={manifest_id})");
+
+            let cdn_servers = client.get_cdn_servers(cell_id, None).await?;
+            if cdn_servers.is_empty() {
+                return Err("No CDN servers available".into());
+            }
+
+            let depot_key = client.get_depot_decryption_key(depot_id, AppId(app_id)).await?;
+
+            let request_code = client
+                .get_manifest_request_code(AppId(app_id), depot_id, manifest_id, None, None)
+                .await?
+                .unwrap_or(0);
+
+            let cdn_auth = client
+                .get_cdn_auth_token(AppId(app_id), depot_id, &cdn_servers[0].host)
+                .await?;
+
+            let cdn = steam::cdn::CdnClient::new()?;
+            let manifest_bytes = cdn
+                .download_manifest(
+                    &cdn_servers[0], depot_id, manifest_id, request_code,
+                    cdn_auth.token.as_deref(),
+                )
+                .await?;
+
+            let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
+            if manifest.filenames_encrypted {
+                let _ = manifest.decrypt_filenames(&depot_key);
+            }
+
+            tracing::info!("Workshop manifest: {} files", manifest.files.len());
+
+            let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+            let progress_handle = download::spawn_progress_renderer(event_rx);
+
+            let job = steam_client::download::DepotJob::builder()
+                .cdn(cdn)
+                .server(cdn_servers[0].clone())
+                .depot_id(depot_id)
+                .depot_key(depot_key)
+                .cdn_auth_token(cdn_auth.token)
+                .install_dir(output)
+                .max_downloads(opts.max_downloads)
+                .event_sender(event_tx)
+                .build()
+                .map_err(|e| -> CliError { e.into() })?;
+
+            job.download(&manifest).await?;
+            drop(job);
+            progress_handle.await?;
+
+            tracing::info!("Workshop download complete");
             return Ok(());
         }
     }
@@ -1215,6 +1261,13 @@ fn discover_manifests_for_branch(
 }
 
 /// Legacy helper: discover manifest ID for a specific depot on a branch.
+fn discover_build_id(app_infos: &[steam::apps::AppInfo], branch: &str) -> Option<u32> {
+    discover_branches(app_infos)
+        .into_iter()
+        .find(|b| b.name == branch)
+        .and_then(|b| b.build_id)
+}
+
 fn discover_manifest_id(
     app_infos: &[steam::apps::AppInfo],
     depot_id: DepotId,
@@ -1223,4 +1276,53 @@ fn discover_manifest_id(
     discover_manifests_for_branch(app_infos, branch, Some(depot_id))
         .into_iter()
         .find_map(|e| e.manifest_id)
+}
+
+/// Resolve a manifest ID for a depot, trying:
+/// 1. Public manifests for the branch
+/// 2. Beta password if provided
+/// 3. Fallback to "public" branch
+async fn resolve_manifest_id(
+    client: &steam::client::SteamClient<steam::client::LoggedIn>,
+    app_infos: &[steam::apps::AppInfo],
+    app_id: AppId,
+    depot_id: DepotId,
+    branch: &str,
+    beta_password: Option<&str>,
+) -> Result<ManifestId, CliError> {
+    if let Some(id) = discover_manifest_id(app_infos, depot_id, branch) {
+        return Ok(id);
+    }
+
+    // Check if this branch exists in encryptedmanifests and we have a password
+    if let Some(password) = beta_password {
+        tracing::info!("Branch '{branch}' requires a password, checking...");
+        match client.check_beta_password(app_id, password).await {
+            Ok(branches) => {
+                for b in &branches {
+                    tracing::debug!("Unlocked beta branch: {:?}", b.name);
+                }
+                // Re-fetch app info now that we've validated the password,
+                // then try to find the manifest using the decrypted branch data.
+                // The encrypted manifest GID should now be accessible.
+                let entries = discover_manifests_for_branch(app_infos, branch, Some(depot_id));
+                if let Some(entry) = entries.into_iter().find(|e| e.manifest_id.is_some()) {
+                    return Ok(entry.manifest_id.unwrap());
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Beta password check failed: {e}");
+            }
+        }
+    }
+
+    // Fallback to public branch
+    if branch != "public" {
+        tracing::warn!("Branch '{branch}' not found for depot {depot_id}, trying 'public'");
+        if let Some(id) = discover_manifest_id(app_infos, depot_id, "public") {
+            return Ok(id);
+        }
+    }
+
+    Err(format!("No manifest for depot {depot_id} on branch '{branch}'").into())
 }
