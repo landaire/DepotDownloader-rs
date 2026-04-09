@@ -39,7 +39,6 @@ async fn main() -> Result<(), BoxError> {
     }
 }
 
-// ── Shared connection helper ─────────────────────────────────
 
 async fn discover_servers(cell_id: u32) -> Vec<CmServer> {
     let http = reqwest::Client::new();
@@ -293,7 +292,6 @@ async fn authenticate_credentials(
 
 use base64::Engine;
 
-// ── info ─────────────────────────────────────────────────────
 
 async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), BoxError> {
     let app_id = AppId(args.app);
@@ -409,7 +407,6 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), BoxError> 
     Ok(())
 }
 
-// ── download ─────────────────────────────────────────────────
 
 async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), BoxError> {
     let app_id = AppId(args.app);
@@ -597,7 +594,6 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Bo
     Ok(())
 }
 
-// ── manifests ────────────────────────────────────────────────
 
 async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), BoxError> {
     let app_id = AppId(args.app);
@@ -631,7 +627,6 @@ async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), 
     Ok(())
 }
 
-// ── files ────────────────────────────────────────────────────
 
 async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError> {
     let app_id = AppId(args.app);
@@ -725,7 +720,6 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), BoxError
     Ok(())
 }
 
-// ── workshop ─────────────────────────────────────────────────
 
 async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), BoxError> {
     let pubfile_id = match (args.pubfile, args.ugc) {
@@ -803,7 +797,6 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Bo
     Err("Workshop item has no downloadable content".into())
 }
 
-// ── Helpers ──────────────────────────────────────────────────
 
 /// Get product info for an app, handling missing access tokens.
 async fn get_app_info(

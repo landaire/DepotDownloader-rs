@@ -1,4 +1,4 @@
-//! TCP transport — the default production transport.
+//! TCP transport - the default production transport.
 
 use async_trait::async_trait;
 use bytes::Bytes;

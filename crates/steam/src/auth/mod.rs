@@ -69,7 +69,6 @@ pub struct AuthTokens {
     pub account_name: Option<String>,
 }
 
-// ── Pre-logon auth (Encrypted state, non-authed RPCs) ────────
 
 impl SteamClient<Encrypted> {
     /// Get the RSA public key for encrypting a password.

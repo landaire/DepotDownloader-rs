@@ -6,9 +6,8 @@
 #[repr(transparent)]
 pub struct EMsg(pub u32);
 
-// Allow matching on EMsg values like constants
 impl EMsg {
-    // ── General ──────────────────────────────────────────────
+
     pub const INVALID: Self = Self(0);
     pub const MULTI: Self = Self(1);
     pub const SERVICE_METHOD: Self = Self(146);
@@ -16,7 +15,7 @@ impl EMsg {
     pub const SERVICE_METHOD_CALL_FROM_CLIENT: Self = Self(151);
     pub const SERVICE_METHOD_SEND_TO_CLIENT: Self = Self(152);
 
-    // ── Client Base ──────────────────────────────────────────
+
     pub const CLIENT_HEART_BEAT: Self = Self(703);
     pub const CLIENT_LOGOFF: Self = Self(706);
     pub const CLIENT_GAMES_PLAYED: Self = Self(742);
@@ -31,21 +30,21 @@ impl EMsg {
     pub const CLIENT_GET_APP_OWNERSHIP_TICKET: Self = Self(857);
     pub const CLIENT_GET_APP_OWNERSHIP_TICKET_RESPONSE: Self = Self(858);
 
-    // ── Channel Encryption ───────────────────────────────────
+
     pub const CHANNEL_ENCRYPT_REQUEST: Self = Self(1303);
     pub const CHANNEL_ENCRYPT_RESPONSE: Self = Self(1304);
     pub const CHANNEL_ENCRYPT_RESULT: Self = Self(1305);
 
-    // ── Login ─────────────────────────────────────────────────
+
     pub const CLIENT_LOGON: Self = Self(5514);
 
-    // ── Depot / Content ──────────────────────────────────────
+
     pub const CLIENT_GET_DEPOT_DECRYPTION_KEY: Self = Self(5438);
     pub const CLIENT_GET_DEPOT_DECRYPTION_KEY_RESPONSE: Self = Self(5439);
     pub const CLIENT_GET_CDN_AUTH_TOKEN: Self = Self(5546);
     pub const CLIENT_GET_CDN_AUTH_TOKEN_RESPONSE: Self = Self(5547);
 
-    // ── PICS ─────────────────────────────────────────────────
+
     pub const CLIENT_PICS_CHANGES_SINCE_REQUEST: Self = Self(8901);
     pub const CLIENT_PICS_CHANGES_SINCE_RESPONSE: Self = Self(8902);
     pub const CLIENT_PICS_PRODUCT_INFO_REQUEST: Self = Self(8903);
@@ -53,7 +52,7 @@ impl EMsg {
     pub const CLIENT_PICS_ACCESS_TOKEN_REQUEST: Self = Self(8905);
     pub const CLIENT_PICS_ACCESS_TOKEN_RESPONSE: Self = Self(8906);
 
-    // ── Service Methods (unified messages) ───────────────────
+
     pub const SERVICE_METHOD_CALL_FROM_CLIENT_NON_AUTHED: Self = Self(9804);
     pub const CLIENT_HELLO: Self = Self(9805);
 }

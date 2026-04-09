@@ -13,7 +13,7 @@ pub enum ChunkCompression {
     Lzma,
     /// PKzip: standard ZIP archive containing one entry.
     Zip,
-    /// No compression — raw data.
+    /// No compression - raw data.
     None,
 }
 

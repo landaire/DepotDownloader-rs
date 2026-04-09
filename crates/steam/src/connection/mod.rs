@@ -10,7 +10,7 @@ pub struct CmServer {
     pub protocol: Protocol,
 }
 
-/// Address for a CM server — either already resolved or a hostname to resolve.
+/// Address for a CM server - either already resolved or a hostname to resolve.
 #[derive(Debug, Clone)]
 pub enum CmServerAddr {
     Resolved(SocketAddr),

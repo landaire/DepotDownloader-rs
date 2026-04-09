@@ -1,4 +1,4 @@
-//! Handles EMsg::Multi — bundled/compressed messages from the CM server.
+//! Handles EMsg::Multi - bundled/compressed messages from the CM server.
 //!
 //! Wire format of Multi body (protobuf: CMsgMulti):
 //! - `size_unzipped` (uint32): If > 0, the payload is gzip-compressed

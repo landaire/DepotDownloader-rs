@@ -2,9 +2,9 @@
 //!
 //! Allows swapping the underlying I/O for recording and replay:
 //!
-//! - [`TcpTransport`] — real TCP connection (production)
-//! - [`RecordingTransport`] — wraps another transport, records incoming packets to disk
-//! - [`ReplayTransport`] — feeds recorded packets back for testing
+//! - [`TcpTransport`] - real TCP connection (production)
+//! - [`RecordingTransport`] - wraps another transport, records incoming packets to disk
+//! - [`ReplayTransport`] - feeds recorded packets back for testing
 
 pub mod capture;
 pub mod recording;
@@ -16,7 +16,7 @@ use bytes::Bytes;
 
 /// A transport that can send and receive raw VT01 frame payloads.
 ///
-/// Implementations handle framing internally — callers deal with
+/// Implementations handle framing internally - callers deal with
 /// payloads only, not length/magic headers.
 #[async_trait]
 pub trait Transport: Send + Sync + 'static {

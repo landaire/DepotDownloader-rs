@@ -35,7 +35,7 @@ pub struct DepotJob {
     event_tx: mpsc::UnboundedSender<DownloadEvent>,
     /// When true, verify existing files and only re-download corrupted chunks.
     verify: bool,
-    /// File filter — only download files matching this filter.
+    /// File filter - only download files matching this filter.
     file_filter: Option<FileFilter>,
     /// Previous manifest for delta downloads.
     previous_manifest: Option<DepotManifest>,

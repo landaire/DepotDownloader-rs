@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
-// ── Modern CLI (default) ─────────────────────────────────────
 
 /// Steam depot content downloader.
 #[derive(Debug, Parser)]
@@ -223,7 +222,6 @@ pub struct WorkshopArgs {
     pub output: Option<String>,
 }
 
-// ── Legacy compat CLI (DD_COMPAT=1) ──────────────────────────
 
 /// DepotDownloader-compatible flat argument style.
 ///
@@ -313,11 +311,10 @@ pub struct CompatCli {
     pub debug: bool,
 }
 
-// ── Resolved options (common to both modes) ──────────────────
 
 /// Normalized options produced by either CLI mode.
 ///
-/// The rest of the binary works against this — no branching on CLI mode.
+/// The rest of the binary works against this - no branching on CLI mode.
 #[derive(Debug)]
 pub struct Options {
     pub auth: AuthOptions,

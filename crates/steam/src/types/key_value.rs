@@ -5,8 +5,6 @@
 //! determined by the type byte.
 
 use std::collections::BTreeMap;
-// Using BTreeMap instead of HashMap for deterministic iteration order,
-// which matters for serialization and snapshot testing.
 
 use winnow::binary::{le_f32, le_i32, le_i64, le_u64, le_u8};
 use winnow::error::{ContextError, ErrMode, StrContext, StrContextValue};
@@ -223,7 +221,6 @@ fn parse_null_string(input: &mut &[u8]) -> ModalResult<String> {
     Ok(String::from_utf8_lossy(bytes).into_owned())
 }
 
-// ── Text KV parser ───────────────────────────────────────────
 
 /// Parse a text-format KeyValue string (used by PICS app info responses).
 ///

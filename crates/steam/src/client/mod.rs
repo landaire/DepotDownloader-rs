@@ -18,14 +18,12 @@ use crate::types::SteamId;
 
 use self::msg::ClientMsg;
 
-// ── Typestate markers ────────────────────────────────────────
 
 pub struct Disconnected;
 pub struct Connected;
 pub struct Encrypted;
 pub struct LoggedIn;
 
-// ── Core client ──────────────────────────────────────────────
 
 struct ClientInner {
     transport: Box<dyn Transport>,
@@ -56,7 +54,7 @@ pub struct SteamClient<S> {
     _state: std::marker::PhantomData<S>,
 }
 
-/// The Disconnected state — no connection exists yet.
+/// The Disconnected state - no connection exists yet.
 pub struct DisconnectedClient {
     event_tx: mpsc::UnboundedSender<IncomingMsg>,
 }
@@ -327,7 +325,7 @@ impl SteamClient<LoggedIn> {
                 }
             }
 
-            // Not our response — forward to event channel
+            // Not our response - forward to event channel
             if self.inner.event_tx.send(incoming).is_err() {
                 tracing::trace!("Event receiver dropped, discarding message");
             }
@@ -353,7 +351,6 @@ impl SteamClient<LoggedIn> {
     }
 }
 
-// ── Shared recv logic ────────────────────────────────────────
 
 async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
     loop {
@@ -411,7 +408,7 @@ async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
     }
 }
 
-/// Like recv_routed_msg but does NOT route the specified job_id —
+/// Like recv_routed_msg but does NOT route the specified job_id -
 /// lets it pass through so the caller can handle it directly.
 async fn recv_routed_msg_except(inner: &ClientInner, except_job_id: u64) -> Result<IncomingMsg, Error> {
     loop {
@@ -474,7 +471,6 @@ async fn recv_routed_msg_except(inner: &ClientInner, except_job_id: u64) -> Resu
     }
 }
 
-// ── Helpers ──────────────────────────────────────────────────
 
 fn parse_incoming(data: Bytes) -> Result<IncomingMsg, Error> {
     if data.len() < 4 {

@@ -1,4 +1,4 @@
-//! Recording transport — wraps a real transport and captures incoming packets to disk.
+//! Recording transport - wraps a real transport and captures incoming packets to disk.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};

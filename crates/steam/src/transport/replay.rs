@@ -1,4 +1,4 @@
-//! Replay transport — feeds recorded packets back for testing.
+//! Replay transport - feeds recorded packets back for testing.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
