@@ -1,5 +1,4 @@
-//! Steam CDN client for downloading depot manifests and content chunks.
-
+pub mod lancache;
 pub mod server;
 
 use bytes::Bytes;
@@ -10,10 +9,10 @@ use crate::error::Error;
 
 use self::server::CdnServer;
 
-/// A client for downloading content from Steam CDN servers.
 #[derive(Clone)]
 pub struct CdnClient {
     http: Client,
+    use_lancache: bool,
 }
 
 impl CdnClient {
@@ -21,12 +20,18 @@ impl CdnClient {
         let http = Client::builder()
             .user_agent("Valve/Steam HTTP Client 1.0")
             .build()?;
-        Ok(Self { http })
+        Ok(Self { http, use_lancache: false })
     }
 
-    /// Download a depot manifest.
-    ///
-    /// Returns the raw manifest bytes (ZIP-compressed protobuf sections).
+    pub fn with_lancache(mut self) -> Self {
+        self.use_lancache = true;
+        self
+    }
+
+    pub fn is_lancache(&self) -> bool {
+        self.use_lancache
+    }
+
     pub async fn download_manifest(
         &self,
         server: &CdnServer,
@@ -44,14 +49,10 @@ impl CdnClient {
             format!("depot/{}/manifest/{}/5", depot_id.0, manifest_id.0)
         };
 
-        let url = server.build_url(&path, cdn_auth_token);
-        let resp = self.http.get(&url).send().await?.error_for_status()?;
-        Ok(resp.bytes().await?)
+        let resp = self.cdn_get(server, &path, cdn_auth_token).await?;
+        Ok(resp)
     }
 
-    /// Download a single depot chunk.
-    ///
-    /// Returns the raw chunk bytes (encrypted + compressed).
     pub async fn download_chunk(
         &self,
         server: &CdnServer,
@@ -60,9 +61,30 @@ impl CdnClient {
         cdn_auth_token: Option<&str>,
     ) -> Result<Bytes, Error> {
         let path = format!("depot/{}/chunk/{chunk_id}", depot_id.0);
-        let url = server.build_url(&path, cdn_auth_token);
-        tracing::debug!("Downloading chunk: {url} (has_token={})", cdn_auth_token.is_some());
-        let resp = self.http.get(&url).send().await?.error_for_status()?;
-        Ok(resp.bytes().await?)
+        self.cdn_get(server, &path, cdn_auth_token).await
+    }
+
+    async fn cdn_get(
+        &self,
+        server: &CdnServer,
+        path: &str,
+        cdn_auth_token: Option<&str>,
+    ) -> Result<Bytes, Error> {
+        if self.use_lancache {
+            let url = lancache::build_url(path, cdn_auth_token);
+            let host = lancache::host_header(&server.vhost);
+            tracing::debug!("Lancache request: {url} (Host: {host})");
+            let resp = self.http
+                .get(&url)
+                .header("Host", host)
+                .send()
+                .await?
+                .error_for_status()?;
+            Ok(resp.bytes().await?)
+        } else {
+            let url = server.build_url(path, cdn_auth_token);
+            let resp = self.http.get(&url).send().await?.error_for_status()?;
+            Ok(resp.bytes().await?)
+        }
     }
 }

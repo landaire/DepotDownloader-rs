@@ -556,7 +556,20 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
 
     let build_id = discover_build_id(&app_infos, &args.branch);
 
-    let cdn = steam::cdn::CdnClient::new()?;
+    let mut cdn = steam::cdn::CdnClient::new()?;
+    let mut max_downloads = opts.max_downloads;
+
+    if args.lancache {
+        if steam::cdn::lancache::detect().await {
+            cdn = cdn.with_lancache();
+            if max_downloads == 8 {
+                max_downloads = 25;
+            }
+            tracing::info!("Lancache detected, using local cache (max_downloads={max_downloads})");
+        } else {
+            tracing::warn!("--lancache specified but no lancache server detected on the network");
+        }
+    }
 
     for &depot_id in &depot_ids {
         tracing::info!("Processing depot {depot_id}...");
@@ -661,7 +674,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
                 }
                 p
             })
-            .max_downloads(opts.max_downloads)
+            .max_downloads(max_downloads)
             .event_sender(event_tx)
             .verify(args.verify)
             .file_filter(file_filter)
