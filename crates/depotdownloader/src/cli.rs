@@ -87,6 +87,8 @@ pub enum OutputFormat {
     Table,
     /// Machine-readable JSON output.
     Json,
+    /// One filename per line, suitable for piping into other tools.
+    Plain,
 }
 
 #[derive(Debug, Parser)]

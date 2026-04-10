@@ -512,6 +512,11 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), CliError> 
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&overview)?);
         }
+        OutputFormat::Plain => {
+            for d in &overview.depots {
+                println!("{}", d.id.0);
+            }
+        }
         OutputFormat::Table => {
             println!("App {app_id}");
             println!();
@@ -797,6 +802,13 @@ async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), 
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&entries)?);
         }
+        OutputFormat::Plain => {
+            for e in &entries {
+                if let Some(id) = e.manifest_id {
+                    println!("{} {}", e.depot_id.0, id.0);
+                }
+            }
+        }
         OutputFormat::Table => {
             println!("{:<12} {:<30} {:>22}", "DEPOT", "NAME", "MANIFEST ID");
             for e in &entries {
@@ -872,6 +884,13 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), CliError
     match args.format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&manifest)?);
+        }
+        OutputFormat::Plain => {
+            for file in &manifest.files {
+                if let Some(name) = &file.filename {
+                    println!("{name}");
+                }
+            }
         }
         OutputFormat::Table => {
             println!("Depot:    {depot_id}");
