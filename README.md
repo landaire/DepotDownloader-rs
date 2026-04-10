@@ -77,4 +77,4 @@ Benchmark | Rust | C# | Speedup |
 | **List files (Spacewar)** | 1.35s | 2.46s | **1.8x** |
 | **App info (Spacewar)** | 961ms | 2.68s | **2.8x** |
 | **List files (TF2, large)** | 783ms | 2.96s | **3.8x** |
-| **Download (Spacewar)** | 845ms | 3.48s | **4.1x
+| **Download (Spacewar)** | 845ms | 3.48s | **4.1x** |
