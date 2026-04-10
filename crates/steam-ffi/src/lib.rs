@@ -689,6 +689,8 @@ mod ffi {
             self.0.is_some()
         }
 
+        // diplomat-tool requires explicit lifetimes on slice returns
+        #[allow(clippy::needless_lifetimes)]
         pub fn raw_bytes<'a>(&'a self) -> &'a [u8] {
             match &self.0 {
                 Some(data) => data.as_slice(),
@@ -795,6 +797,8 @@ mod ffi {
     pub struct ChunkData(Vec<u8>);
 
     impl ChunkData {
+        // diplomat-tool requires explicit lifetimes on slice returns
+        #[allow(clippy::needless_lifetimes)]
         pub fn as_bytes<'a>(&'a self) -> &'a [u8] {
             &self.0
         }
