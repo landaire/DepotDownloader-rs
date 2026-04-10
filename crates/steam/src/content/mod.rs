@@ -5,18 +5,20 @@
 use prost::Message;
 
 use crate::cdn::server::CdnServer;
-use crate::client::{LoggedIn, SteamClient};
-use crate::depot::{AppId, CellId, DepotId, ManifestId};
+use crate::client::LoggedIn;
+use crate::client::SteamClient;
+use crate::depot::AppId;
+use crate::depot::CellId;
+use crate::depot::DepotId;
+use crate::depot::ManifestId;
 use crate::error::Error;
-use crate::generated::{
-    CContentServerDirectoryGetCdnAuthTokenRequest,
-    CContentServerDirectoryGetCdnAuthTokenResponse,
-    CContentServerDirectoryGetManifestRequestCodeRequest,
-    CContentServerDirectoryGetManifestRequestCodeResponse,
-    CContentServerDirectoryGetServersForSteamPipeRequest,
-    CContentServerDirectoryGetServersForSteamPipeResponse,
-    CContentServerDirectoryServerInfo,
-};
+use crate::generated::CContentServerDirectoryGetCdnAuthTokenRequest;
+use crate::generated::CContentServerDirectoryGetCdnAuthTokenResponse;
+use crate::generated::CContentServerDirectoryGetManifestRequestCodeRequest;
+use crate::generated::CContentServerDirectoryGetManifestRequestCodeResponse;
+use crate::generated::CContentServerDirectoryGetServersForSteamPipeRequest;
+use crate::generated::CContentServerDirectoryGetServersForSteamPipeResponse;
+use crate::generated::CContentServerDirectoryServerInfo;
 
 /// A CDN auth token with its expiration time.
 #[derive(Debug, Clone)]
@@ -43,17 +45,13 @@ impl SteamClient<LoggedIn> {
         .encode_to_vec();
 
         let resp = self
-            .call_service_method(
-                "ContentServerDirectory.GetServersForSteamPipe#1",
-                &encoded,
-            )
+            .call_service_method("ContentServerDirectory.GetServersForSteamPipe#1", &encoded)
             .await?;
 
-        let body = CContentServerDirectoryGetServersForSteamPipeResponse::decode(
-            &resp.body[..],
-        )?;
+        let body = CContentServerDirectoryGetServersForSteamPipeResponse::decode(&resp.body[..])?;
 
-        let servers: Vec<_> = body.servers
+        let servers: Vec<_> = body
+            .servers
             .into_iter()
             .filter_map(|info| {
                 let host = info.host.clone();
@@ -86,15 +84,10 @@ impl SteamClient<LoggedIn> {
         .encode_to_vec();
 
         let resp = self
-            .call_service_method(
-                "ContentServerDirectory.GetManifestRequestCode#1",
-                &encoded,
-            )
+            .call_service_method("ContentServerDirectory.GetManifestRequestCode#1", &encoded)
             .await?;
 
-        let body = CContentServerDirectoryGetManifestRequestCodeResponse::decode(
-            &resp.body[..],
-        )?;
+        let body = CContentServerDirectoryGetManifestRequestCodeResponse::decode(&resp.body[..])?;
 
         Ok(body.manifest_request_code)
     }
@@ -114,14 +107,10 @@ impl SteamClient<LoggedIn> {
         .encode_to_vec();
 
         let resp = self
-            .call_service_method(
-                "ContentServerDirectory.GetCDNAuthToken#1",
-                &encoded,
-            )
+            .call_service_method("ContentServerDirectory.GetCDNAuthToken#1", &encoded)
             .await?;
 
-        let body =
-            CContentServerDirectoryGetCdnAuthTokenResponse::decode(&resp.body[..])?;
+        let body = CContentServerDirectoryGetCdnAuthTokenResponse::decode(&resp.body[..])?;
 
         Ok(CdnAuthToken {
             token: body.token,

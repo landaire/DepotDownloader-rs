@@ -4,7 +4,9 @@ pub mod server;
 use bytes::Bytes;
 use reqwest::Client;
 
-use crate::depot::{ChunkId, DepotId, ManifestId};
+use crate::depot::ChunkId;
+use crate::depot::DepotId;
+use crate::depot::ManifestId;
 use crate::error::Error;
 
 use self::server::CdnServer;
@@ -20,7 +22,10 @@ impl CdnClient {
         let http = Client::builder()
             .user_agent("Valve/Steam HTTP Client 1.0")
             .build()?;
-        Ok(Self { http, use_lancache: false })
+        Ok(Self {
+            http,
+            use_lancache: false,
+        })
     }
 
     pub fn with_lancache(mut self) -> Self {
@@ -74,7 +79,8 @@ impl CdnClient {
             let url = lancache::build_url(path, cdn_auth_token);
             let host = lancache::host_header(&server.vhost);
             tracing::debug!("Lancache request: {url} (Host: {host})");
-            let resp = self.http
+            let resp = self
+                .http
                 .get(&url)
                 .header("Host", host)
                 .send()

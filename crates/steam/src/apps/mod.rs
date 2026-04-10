@@ -2,17 +2,23 @@
 
 use prost::Message;
 
-use crate::client::{LoggedIn, SteamClient};
+use crate::client::LoggedIn;
+use crate::client::SteamClient;
 use crate::client::msg::ClientMsg;
-use crate::depot::{AppId, DepotId, DepotKey};
-use crate::error::{ConnectionError, Error};
-use crate::generated::{
-    CMsgClientCheckAppBetaPassword, CMsgClientCheckAppBetaPasswordResponse,
-    CMsgClientGetDepotDecryptionKey, CMsgClientGetDepotDecryptionKeyResponse,
-    CMsgClientPicsAccessTokenRequest, CMsgClientPicsAccessTokenResponse,
-    CMsgClientPicsProductInfoRequest, CMsgClientPicsProductInfoResponse,
-    c_msg_client_pics_product_info_request,
-};
+use crate::depot::AppId;
+use crate::depot::DepotId;
+use crate::depot::DepotKey;
+use crate::error::ConnectionError;
+use crate::error::Error;
+use crate::generated::CMsgClientCheckAppBetaPassword;
+use crate::generated::CMsgClientCheckAppBetaPasswordResponse;
+use crate::generated::CMsgClientGetDepotDecryptionKey;
+use crate::generated::CMsgClientGetDepotDecryptionKeyResponse;
+use crate::generated::CMsgClientPicsAccessTokenRequest;
+use crate::generated::CMsgClientPicsAccessTokenResponse;
+use crate::generated::CMsgClientPicsProductInfoRequest;
+use crate::generated::CMsgClientPicsProductInfoResponse;
+use crate::generated::c_msg_client_pics_product_info_request;
 use crate::messages::EMsg;
 
 /// PICS access token for an app.
@@ -62,7 +68,11 @@ impl SteamClient<LoggedIn> {
                             _ => None,
                         };
                         if result.is_none() {
-                            tracing::debug!("PICS access token entry missing fields: appid={:?} token={:?}", t.appid, t.access_token.is_some());
+                            tracing::debug!(
+                                "PICS access token entry missing fields: appid={:?} token={:?}",
+                                t.appid,
+                                t.access_token.is_some()
+                            );
                         }
                         result
                     })
@@ -72,10 +82,7 @@ impl SteamClient<LoggedIn> {
     }
 
     /// Request PICS product info for apps (with access tokens).
-    pub async fn pics_get_product_info(
-        &self,
-        apps: &[AccessToken],
-    ) -> Result<Vec<AppInfo>, Error> {
+    pub async fn pics_get_product_info(&self, apps: &[AccessToken]) -> Result<Vec<AppInfo>, Error> {
         let encoded = CMsgClientPicsProductInfoRequest {
             apps: apps
                 .iter()
@@ -138,8 +145,7 @@ impl SteamClient<LoggedIn> {
         loop {
             let incoming = self.recv_msg().await?;
             if incoming.emsg == EMsg::CLIENT_GET_DEPOT_DECRYPTION_KEY_RESPONSE {
-                let body =
-                    CMsgClientGetDepotDecryptionKeyResponse::decode(&incoming.body[..])?;
+                let body = CMsgClientGetDepotDecryptionKeyResponse::decode(&incoming.body[..])?;
 
                 if let Err(e) = crate::enums::EResultError::from_i32(body.eresult.unwrap_or(0)) {
                     return Err(ConnectionError::DepotAccessDenied {

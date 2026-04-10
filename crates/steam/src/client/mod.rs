@@ -2,28 +2,34 @@ pub mod msg;
 pub mod multi;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 
 use bytes::Bytes;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::Mutex;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 use crate::connection::encryption::SessionCipher;
-use crate::error::{ConnectionError, Error, ParseError};
+use crate::error::ConnectionError;
+use crate::error::Error;
+use crate::error::ParseError;
 use crate::generated::CMsgProtoBufHeader;
-use crate::messages::header::{MsgHdr, MsgHdrProtoBuf};
-use crate::messages::{EMsg, EMSG_MASK, PROTO_MASK};
+use crate::messages::EMSG_MASK;
+use crate::messages::EMsg;
+use crate::messages::PROTO_MASK;
+use crate::messages::header::MsgHdr;
+use crate::messages::header::MsgHdrProtoBuf;
 use crate::transport::Transport;
 use crate::types::SteamId;
 
 use self::msg::ClientMsg;
 
-
 pub struct Disconnected;
 pub struct Connected;
 pub struct Encrypted;
 pub struct LoggedIn;
-
 
 struct ClientInner {
     transport: Box<dyn Transport>,
@@ -178,11 +184,8 @@ impl SteamClient<Encrypted> {
             let incoming = self.recv_msg().await?;
             if incoming.emsg == EMsg::CLIENT_LOG_ON_RESPONSE {
                 let body: crate::generated::CMsgClientLogonResponse =
-                    prost::Message::decode(&incoming.body[..])
-                        .unwrap_or_default();
-                let eresult = body.eresult
-                    .or(incoming.header.eresult)
-                    .unwrap_or(0);
+                    prost::Message::decode(&incoming.body[..]).unwrap_or_default();
+                let eresult = body.eresult.or(incoming.header.eresult).unwrap_or(0);
                 if let Err(e) = crate::enums::EResultError::from_i32(eresult) {
                     return Err(ConnectionError::LogonFailed(e).into());
                 }
@@ -243,10 +246,10 @@ impl SteamClient<Encrypted> {
         loop {
             let incoming = recv_routed_msg_except(&self.inner, job_id).await?;
 
-            if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-                if incoming.header.jobid_target == Some(job_id) {
-                    return Ok(incoming);
-                }
+            if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE
+                && incoming.header.jobid_target == Some(job_id)
+            {
+                return Ok(incoming);
             }
 
             if self.inner.event_tx.send(incoming).is_err() {
@@ -257,7 +260,9 @@ impl SteamClient<Encrypted> {
 
     async fn send_encrypted(&self, payload: &[u8]) -> Result<(), Error> {
         let cipher = self.inner.cipher.lock().await;
-        let cipher = cipher.as_ref().expect("cipher must be set in Encrypted state");
+        let cipher = cipher
+            .as_ref()
+            .expect("cipher must be set in Encrypted state");
         let encrypted = cipher.encrypt(payload);
         self.inner.transport.send(&encrypted).await
     }
@@ -317,10 +322,10 @@ impl SteamClient<LoggedIn> {
         loop {
             let incoming = recv_routed_msg_except(&self.inner, job_id).await?;
 
-            if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-                if incoming.header.jobid_target == Some(job_id) {
-                    return Ok(incoming);
-                }
+            if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE
+                && incoming.header.jobid_target == Some(job_id)
+            {
+                return Ok(incoming);
             }
 
             // Not our response - forward to event channel
@@ -349,21 +354,19 @@ impl SteamClient<LoggedIn> {
     }
 }
 
-
 async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
     loop {
         {
             let mut queue = inner.msg_queue.lock().await;
             if let Some(msg) = queue.pop_front() {
-                if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-                    if let Some(job_id) = msg.header.jobid_target {
-                        if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
-                            if tx.send(msg).is_err() {
-                                tracing::warn!("Job {job_id} receiver dropped, discarding response");
-                            }
-                            continue;
-                        }
+                if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE
+                    && let Some(job_id) = msg.header.jobid_target
+                    && let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id)
+                {
+                    if tx.send(msg).is_err() {
+                        tracing::warn!("Job {job_id} receiver dropped, discarding response");
                     }
+                    continue;
                 }
                 return Ok(msg);
             }
@@ -391,15 +394,14 @@ async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
             continue;
         }
 
-        if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-            if let Some(job_id) = incoming.header.jobid_target {
-                if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
-                    if tx.send(incoming).is_err() {
-                        tracing::warn!("Job {job_id} receiver dropped, discarding response");
-                    }
-                    continue;
-                }
+        if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE
+            && let Some(job_id) = incoming.header.jobid_target
+            && let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id)
+        {
+            if tx.send(incoming).is_err() {
+                tracing::warn!("Job {job_id} receiver dropped, discarding response");
             }
+            continue;
         }
 
         return Ok(incoming);
@@ -408,22 +410,25 @@ async fn recv_routed_msg(inner: &ClientInner) -> Result<IncomingMsg, Error> {
 
 /// Like recv_routed_msg but does NOT route the specified job_id -
 /// lets it pass through so the caller can handle it directly.
-async fn recv_routed_msg_except(inner: &ClientInner, except_job_id: u64) -> Result<IncomingMsg, Error> {
+async fn recv_routed_msg_except(
+    inner: &ClientInner,
+    except_job_id: u64,
+) -> Result<IncomingMsg, Error> {
     loop {
         {
             let mut queue = inner.msg_queue.lock().await;
             if let Some(msg) = queue.pop_front() {
-                if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-                    if let Some(job_id) = msg.header.jobid_target {
-                        // Don't steal our caller's job
-                        if job_id != except_job_id {
-                            if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
-                                if tx.send(msg).is_err() {
-                                    tracing::warn!("Job {job_id} receiver dropped");
-                                }
-                                continue;
-                            }
+                if msg.emsg == EMsg::SERVICE_METHOD_RESPONSE
+                    && let Some(job_id) = msg.header.jobid_target
+                {
+                    // Don't steal our caller's job
+                    if job_id != except_job_id
+                        && let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id)
+                    {
+                        if tx.send(msg).is_err() {
+                            tracing::warn!("Job {job_id} receiver dropped");
                         }
+                        continue;
                     }
                 }
                 return Ok(msg);
@@ -452,23 +457,20 @@ async fn recv_routed_msg_except(inner: &ClientInner, except_job_id: u64) -> Resu
             continue;
         }
 
-        if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE {
-            if let Some(job_id) = incoming.header.jobid_target {
-                if job_id != except_job_id {
-                    if let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id) {
-                        if tx.send(incoming).is_err() {
-                            tracing::warn!("Job {job_id} receiver dropped");
-                        }
-                        continue;
-                    }
-                }
+        if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE
+            && let Some(job_id) = incoming.header.jobid_target
+            && job_id != except_job_id
+            && let Some(tx) = inner.pending_jobs.lock().await.remove(&job_id)
+        {
+            if tx.send(incoming).is_err() {
+                tracing::warn!("Job {job_id} receiver dropped");
             }
+            continue;
         }
 
         return Ok(incoming);
     }
 }
-
 
 fn parse_incoming(data: Bytes) -> Result<IncomingMsg, Error> {
     if data.len() < 4 {

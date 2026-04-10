@@ -6,8 +6,11 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
 use super::Transport;
-use crate::connection::{CmServer, CmServerAddr, framing};
-use crate::error::{ConnectionError, Error};
+use crate::connection::CmServer;
+use crate::connection::CmServerAddr;
+use crate::connection::framing;
+use crate::error::ConnectionError;
+use crate::error::Error;
 
 /// A transport backed by a real TCP connection.
 pub struct TcpTransport {
@@ -31,9 +34,7 @@ impl TcpTransport {
                 let addr = lookup_host(format!("{host}:{port}"))
                     .await?
                     .next()
-                    .ok_or_else(|| {
-                        ConnectionError::DnsResolutionFailed { host: host.clone() }
-                    })?;
+                    .ok_or_else(|| ConnectionError::DnsResolutionFailed { host: host.clone() })?;
                 TcpStream::connect(addr).await?
             }
         };

@@ -27,15 +27,13 @@ pub enum Protocol {
 /// Default CM servers (DNS hostnames, resolved at connect time).
 ///
 /// These are used when the Steam Directory API is unavailable.
-pub static DEFAULT_CM_SERVERS: &[CmServer] = &[
-    CmServer {
-        addr: CmServerAddr::Dns {
-            host: String::new(), // populated at runtime, see default_cm_servers()
-            port: 27017,
-        },
-        protocol: Protocol::Tcp,
+pub static DEFAULT_CM_SERVERS: &[CmServer] = &[CmServer {
+    addr: CmServerAddr::Dns {
+        host: String::new(), // populated at runtime, see default_cm_servers()
+        port: 27017,
     },
-];
+    protocol: Protocol::Tcp,
+}];
 
 /// Get the default CM servers. Uses DNS hostnames that Steam resolves.
 pub fn default_cm_servers() -> Vec<CmServer> {

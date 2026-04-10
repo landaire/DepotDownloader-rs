@@ -1,12 +1,16 @@
-use std::io::{self, Write};
+use std::io::Write;
+use std::io::{self};
 
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::LittleEndian;
+use byteorder::WriteBytesExt;
 use bytes::Bytes;
+use winnow::ModalResult;
+use winnow::Parser;
 use winnow::binary::le_u32;
-use winnow::error::{StrContext, StrContextValue};
+use winnow::error::StrContext;
+use winnow::error::StrContextValue;
 use winnow::stream::Partial;
 use winnow::token::take;
-use winnow::{ModalResult, Parser};
 
 /// TCP packet magic: "VT01" as little-endian u32.
 pub const MAGIC: u32 = u32::from_le_bytes(*b"VT01");

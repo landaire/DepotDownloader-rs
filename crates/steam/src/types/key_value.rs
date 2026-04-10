@@ -6,10 +6,18 @@
 
 use std::collections::BTreeMap;
 
-use winnow::binary::{le_f32, le_i32, le_i64, le_u64, le_u8};
-use winnow::error::{ContextError, ErrMode, StrContext, StrContextValue};
+use winnow::ModalResult;
+use winnow::Parser;
+use winnow::binary::le_f32;
+use winnow::binary::le_i32;
+use winnow::binary::le_i64;
+use winnow::binary::le_u8;
+use winnow::binary::le_u64;
+use winnow::error::ContextError;
+use winnow::error::ErrMode;
+use winnow::error::StrContext;
+use winnow::error::StrContextValue;
 use winnow::token::take_until;
-use winnow::{ModalResult, Parser};
 
 /// Type tag byte in the binary KV format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,7 +229,6 @@ fn parse_null_string(input: &mut &[u8]) -> ModalResult<String> {
     Ok(String::from_utf8_lossy(bytes).into_owned())
 }
 
-
 /// Parse a text-format KeyValue string (used by PICS app info responses).
 ///
 /// Format:
@@ -303,19 +310,17 @@ fn parse_quoted_string(input: &mut &str) -> Result<String, TextKvError> {
     loop {
         match chars.next() {
             Some('"') => break,
-            Some('\\') => {
-                match chars.next() {
-                    Some('n') => result.push('\n'),
-                    Some('t') => result.push('\t'),
-                    Some('\\') => result.push('\\'),
-                    Some('"') => result.push('"'),
-                    Some(c) => {
-                        result.push('\\');
-                        result.push(c);
-                    }
-                    None => return Err(TextKvError::UnexpectedEof),
+            Some('\\') => match chars.next() {
+                Some('n') => result.push('\n'),
+                Some('t') => result.push('\t'),
+                Some('\\') => result.push('\\'),
+                Some('"') => result.push('"'),
+                Some(c) => {
+                    result.push('\\');
+                    result.push(c);
                 }
-            }
+                None => return Err(TextKvError::UnexpectedEof),
+            },
             Some(c) => result.push(c),
             None => return Err(TextKvError::UnexpectedEof),
         }

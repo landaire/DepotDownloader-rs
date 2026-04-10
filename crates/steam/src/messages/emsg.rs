@@ -7,14 +7,12 @@
 pub struct EMsg(pub u32);
 
 impl EMsg {
-
     pub const INVALID: Self = Self(0);
     pub const MULTI: Self = Self(1);
     pub const SERVICE_METHOD: Self = Self(146);
     pub const SERVICE_METHOD_RESPONSE: Self = Self(147);
     pub const SERVICE_METHOD_CALL_FROM_CLIENT: Self = Self(151);
     pub const SERVICE_METHOD_SEND_TO_CLIENT: Self = Self(152);
-
 
     pub const CLIENT_HEART_BEAT: Self = Self(703);
     pub const CLIENT_LOGOFF: Self = Self(706);
@@ -30,14 +28,11 @@ impl EMsg {
     pub const CLIENT_GET_APP_OWNERSHIP_TICKET: Self = Self(857);
     pub const CLIENT_GET_APP_OWNERSHIP_TICKET_RESPONSE: Self = Self(858);
 
-
     pub const CHANNEL_ENCRYPT_REQUEST: Self = Self(1303);
     pub const CHANNEL_ENCRYPT_RESPONSE: Self = Self(1304);
     pub const CHANNEL_ENCRYPT_RESULT: Self = Self(1305);
 
-
     pub const CLIENT_LOGON: Self = Self(5514);
-
 
     pub const CLIENT_CHECK_APP_BETA_PASSWORD: Self = Self(5450);
     pub const CLIENT_CHECK_APP_BETA_PASSWORD_RESPONSE: Self = Self(5451);
@@ -46,14 +41,12 @@ impl EMsg {
     pub const CLIENT_GET_CDN_AUTH_TOKEN: Self = Self(5546);
     pub const CLIENT_GET_CDN_AUTH_TOKEN_RESPONSE: Self = Self(5547);
 
-
     pub const CLIENT_PICS_CHANGES_SINCE_REQUEST: Self = Self(8901);
     pub const CLIENT_PICS_CHANGES_SINCE_RESPONSE: Self = Self(8902);
     pub const CLIENT_PICS_PRODUCT_INFO_REQUEST: Self = Self(8903);
     pub const CLIENT_PICS_PRODUCT_INFO_RESPONSE: Self = Self(8904);
     pub const CLIENT_PICS_ACCESS_TOKEN_REQUEST: Self = Self(8905);
     pub const CLIENT_PICS_ACCESS_TOKEN_RESPONSE: Self = Self(8906);
-
 
     pub const SERVICE_METHOD_CALL_FROM_CLIENT_NON_AUTHED: Self = Self(9804);
     pub const CLIENT_HELLO: Self = Self(9805);
@@ -94,9 +87,7 @@ impl std::fmt::Display for EMsg {
             Self::CLIENT_CHECK_APP_BETA_PASSWORD_RESPONSE => "ClientCheckAppBetaPasswordResponse",
             Self::CLIENT_LOGON => "ClientLogon",
             Self::CLIENT_GET_DEPOT_DECRYPTION_KEY => "ClientGetDepotDecryptionKey",
-            Self::CLIENT_GET_DEPOT_DECRYPTION_KEY_RESPONSE => {
-                "ClientGetDepotDecryptionKeyResponse"
-            }
+            Self::CLIENT_GET_DEPOT_DECRYPTION_KEY_RESPONSE => "ClientGetDepotDecryptionKeyResponse",
             Self::CLIENT_GET_CDN_AUTH_TOKEN => "ClientGetCDNAuthToken",
             Self::CLIENT_GET_CDN_AUTH_TOKEN_RESPONSE => "ClientGetCDNAuthTokenResponse",
             Self::CLIENT_PICS_PRODUCT_INFO_REQUEST => "ClientPICSProductInfoRequest",

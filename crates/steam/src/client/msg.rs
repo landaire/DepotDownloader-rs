@@ -1,10 +1,13 @@
-use std::io::{self, Write};
+use std::io::Write;
+use std::io::{self};
 
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::LittleEndian;
+use byteorder::WriteBytesExt;
 use prost::Message;
 
 use crate::generated::CMsgProtoBufHeader;
-use crate::messages::{EMsg, PROTO_MASK};
+use crate::messages::EMsg;
+use crate::messages::PROTO_MASK;
 
 /// A client message ready to be serialized and sent.
 ///

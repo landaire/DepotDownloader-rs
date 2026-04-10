@@ -1,4 +1,5 @@
-use steam::error::{ConnectionError, Error as SteamError};
+use steam::error::ConnectionError;
+use steam::error::Error as SteamError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
@@ -54,52 +55,54 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for CliError {
 impl CliError {
     pub fn human_message(&self) -> Option<&'static str> {
         match self {
-            Self::Steam(SteamError::Http(e)) => {
-                match e.status().map(|s| s.as_u16()) {
-                    Some(401) => Some(
-                        "Access denied. This depot requires authentication.\n\
-                         Try logging in with --username <user> or check that your account owns this app."
-                    ),
-                    Some(403) => Some(
-                        "Forbidden. The CDN rejected the request.\n\
-                         The manifest request code may have expired. Try running the command again."
-                    ),
-                    Some(404) => Some(
-                        "Not found. The requested content does not exist on the CDN.\n\
-                         The manifest ID may be wrong, or the content has been removed."
-                    ),
-                    _ => None,
-                }
-            }
+            Self::Steam(SteamError::Http(e)) => match e.status().map(|s| s.as_u16()) {
+                Some(401) => Some(
+                    "Access denied. This depot requires authentication.\n\
+                         Try logging in with --username <user> or check that your account owns this app.",
+                ),
+                Some(403) => Some(
+                    "Forbidden. The CDN rejected the request.\n\
+                         The manifest request code may have expired. Try running the command again.",
+                ),
+                Some(404) => Some(
+                    "Not found. The requested content does not exist on the CDN.\n\
+                         The manifest ID may be wrong, or the content has been removed.",
+                ),
+                _ => None,
+            },
             Self::Steam(SteamError::Connection(ConnectionError::DepotAccessDenied { .. })) => Some(
                 "Access denied by Steam for this depot.\n\
                  If this is a paid game, log in with --username <user>.\n\
-                 If this is a free dedicated server, check the depot ID."
+                 If this is a free dedicated server, check the depot ID.",
             ),
             Self::Steam(SteamError::Connection(ConnectionError::LogonFailed(_))) => Some(
                 "Login failed. Check your credentials and try again.\n\
-                 If using stored credentials, delete ~/.depotdownloader/tokens.json to re-authenticate."
+                 If using stored credentials, delete ~/.depotdownloader/tokens.json to re-authenticate.",
             ),
             Self::Steam(SteamError::Connection(ConnectionError::EncryptionFailed(_))) => Some(
                 "Encryption handshake failed. The Steam server rejected our connection.\n\
-                 Try again - a different server may be selected."
+                 Try again - a different server may be selected.",
             ),
             Self::Steam(SteamError::Connection(ConnectionError::Disconnected)) => Some(
                 "Disconnected from the Steam server.\n\
-                 The server may be busy. Try again in a moment."
+                 The server may be busy. Try again in a moment.",
             ),
-            Self::Steam(SteamError::Connection(ConnectionError::DnsResolutionFailed { .. })) => Some(
+            Self::Steam(SteamError::Connection(ConnectionError::DnsResolutionFailed {
+                ..
+            })) => Some(
                 "Could not resolve the server hostname.\n\
-                 Check your network connection and DNS settings."
+                 Check your network connection and DNS settings.",
             ),
             Self::Steam(SteamError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut => Some(
                 "Connection timed out. The server may be unreachable.\n\
-                 Check your network connection and try again."
+                 Check your network connection and try again.",
             ),
-            Self::Steam(SteamError::Io(e)) if e.kind() == std::io::ErrorKind::ConnectionReset => Some(
-                "Connection reset by the Steam server.\n\
-                 Try again - a different server may be selected."
-            ),
+            Self::Steam(SteamError::Io(e)) if e.kind() == std::io::ErrorKind::ConnectionReset => {
+                Some(
+                    "Connection reset by the Steam server.\n\
+                 Try again - a different server may be selected.",
+                )
+            }
             _ => None,
         }
     }

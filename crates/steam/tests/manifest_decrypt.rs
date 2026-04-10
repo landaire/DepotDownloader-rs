@@ -3,17 +3,17 @@
 //! Uses the encrypted TF2 depot 440 manifest with the known depot key
 //! to verify decryption produces the expected filenames.
 
+use steam::depot::DepotId;
+use steam::depot::DepotKey;
+use steam::depot::ManifestId;
 use steam::depot::manifest::DepotManifest;
-use steam::depot::{DepotId, DepotKey, ManifestId};
 
 const TEST_DATA: &str = "tests/test_data";
 
 /// Depot 440 (TF2) decryption key from SteamKit2 tests.
 const DEPOT_440_KEY: DepotKey = DepotKey([
-    0x44, 0xCE, 0x5C, 0x52, 0x97, 0xA4, 0x15, 0xA1,
-    0xA6, 0xF6, 0x9C, 0x85, 0x60, 0x37, 0xA5, 0xA2,
-    0xFD, 0xD8, 0x2C, 0xD4, 0x74, 0xFA, 0x65, 0x9E,
-    0xDF, 0xB4, 0xD5, 0x9B, 0x2A, 0xBC, 0x55, 0xFC,
+    0x44, 0xCE, 0x5C, 0x52, 0x97, 0xA4, 0x15, 0xA1, 0xA6, 0xF6, 0x9C, 0x85, 0x60, 0x37, 0xA5, 0xA2,
+    0xFD, 0xD8, 0x2C, 0xD4, 0x74, 0xFA, 0x65, 0x9E, 0xDF, 0xB4, 0xD5, 0x9B, 0x2A, 0xBC, 0x55, 0xFC,
 ]);
 
 fn load(name: &str) -> Vec<u8> {
@@ -30,7 +30,9 @@ fn decrypt_v5_manifest_filenames() {
     assert_eq!(manifest.manifest_id, Some(ManifestId(1118032470228587934)));
     assert_eq!(manifest.files.len(), 7);
 
-    manifest.decrypt_filenames(&DEPOT_440_KEY).expect("should decrypt");
+    manifest
+        .decrypt_filenames(&DEPOT_440_KEY)
+        .expect("should decrypt");
 
     assert!(!manifest.filenames_encrypted);
 
@@ -62,7 +64,9 @@ fn decrypt_v4_manifest_filenames() {
     assert!(manifest.filenames_encrypted);
     assert_eq!(manifest.files.len(), 7);
 
-    manifest.decrypt_filenames(&DEPOT_440_KEY).expect("should decrypt");
+    manifest
+        .decrypt_filenames(&DEPOT_440_KEY)
+        .expect("should decrypt");
 
     assert!(!manifest.filenames_encrypted);
 
@@ -86,7 +90,9 @@ fn decrypt_already_decrypted_is_noop() {
     assert!(!manifest.filenames_encrypted);
 
     // Should be a no-op
-    manifest.decrypt_filenames(&DEPOT_440_KEY).expect("should succeed");
+    manifest
+        .decrypt_filenames(&DEPOT_440_KEY)
+        .expect("should succeed");
     assert!(!manifest.filenames_encrypted);
 
     // Filenames should be unchanged (pre-decrypted manifest uses backslashes)
@@ -101,7 +107,9 @@ fn decrypt_already_decrypted_is_noop() {
 fn decrypted_manifest_matches_expected_metadata() {
     let data = load("depot_440_1118032470228587934.manifest");
     let mut manifest = DepotManifest::parse(&data).expect("should parse");
-    manifest.decrypt_filenames(&DEPOT_440_KEY).expect("should decrypt");
+    manifest
+        .decrypt_filenames(&DEPOT_440_KEY)
+        .expect("should decrypt");
 
     // Values from SteamKit2's TestDecryptedManifest
     assert_eq!(manifest.total_uncompressed_size, Some(825745));
@@ -116,7 +124,10 @@ fn decrypted_manifest_matches_expected_metadata() {
 
     // Last file's chunk
     let last_file = &manifest.files[6];
-    assert_eq!(last_file.filename.as_deref(), Some("tf/media/startupvids.txt"));
+    assert_eq!(
+        last_file.filename.as_deref(),
+        Some("tf/media/startupvids.txt")
+    );
     let chunk = &last_file.chunks[0];
     assert_eq!(chunk.checksum, Some(963249608));
     assert_eq!(chunk.compressed_size, Some(144));
@@ -132,14 +143,20 @@ fn decrypt_handles_base64_with_embedded_newlines() {
     assert!(manifest.filenames_encrypted);
 
     // Verify some filenames actually contain newlines (Steam's line wrapping)
-    let has_newlines = manifest.files.iter().any(|f| {
-        f.filename.as_deref().is_some_and(|n| n.contains('\n'))
-    });
-    assert!(has_newlines, "TF2 fixture should contain filenames with embedded newlines");
+    let has_newlines = manifest
+        .files
+        .iter()
+        .any(|f| f.filename.as_deref().is_some_and(|n| n.contains('\n')));
+    assert!(
+        has_newlines,
+        "TF2 fixture should contain filenames with embedded newlines"
+    );
 
     // Decryption should succeed despite the newlines
     let mut decrypted = manifest.clone();
-    decrypted.decrypt_filenames(&DEPOT_440_KEY).expect("should decrypt despite newlines");
+    decrypted
+        .decrypt_filenames(&DEPOT_440_KEY)
+        .expect("should decrypt despite newlines");
 
     // All filenames should now be clean paths with no newlines
     for file in &decrypted.files {
@@ -151,7 +168,9 @@ fn decrypt_handles_base64_with_embedded_newlines() {
     }
 
     // Should produce the known filenames
-    let names: Vec<&str> = decrypted.files.iter()
+    let names: Vec<&str> = decrypted
+        .files
+        .iter()
         .filter_map(|f| f.filename.as_deref())
         .collect();
     assert!(names.contains(&"bin/dxsupport.cfg"));

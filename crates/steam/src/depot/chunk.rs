@@ -150,7 +150,7 @@ fn decompress_zip(data: &[u8]) -> Result<Vec<u8>, ChunkError> {
     let cursor = std::io::Cursor::new(data);
     let mut archive = zip::ZipArchive::new(cursor).map_err(ChunkError::Zip)?;
 
-    if archive.len() == 0 {
+    if archive.is_empty() {
         return Err(ChunkError::EmptyArchive);
     }
 

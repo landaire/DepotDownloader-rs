@@ -41,8 +41,7 @@ pub fn unpack_multi(body: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
     let mut cursor = payload.as_slice();
 
     while cursor.len() >= 4 {
-        let len =
-            u32::from_le_bytes([cursor[0], cursor[1], cursor[2], cursor[3]]) as usize;
+        let len = u32::from_le_bytes([cursor[0], cursor[1], cursor[2], cursor[3]]) as usize;
         cursor = &cursor[4..];
 
         if cursor.len() < len {
@@ -92,8 +91,7 @@ mod tests {
         payload.extend_from_slice(msg1);
 
         // Gzip compress
-        let mut encoder =
-            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
         encoder.write_all(&payload).unwrap();
         let compressed = encoder.finish().unwrap();
 

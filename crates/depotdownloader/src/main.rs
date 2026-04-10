@@ -7,13 +7,20 @@ use std::path::PathBuf;
 
 use prost::Message;
 
+use crate::cli::Action;
+use crate::cli::Options;
+use crate::cli::OutputFormat;
+use crate::errors::CliError;
 use steam::client::DisconnectedClient;
 use steam::client::msg::ClientMsg;
-use steam::connection::{CmServer, fetch_cm_servers, default_cm_servers};
-use steam::depot::{AppId, CellId, DepotId, ManifestId};
+use steam::connection::CmServer;
+use steam::connection::default_cm_servers;
+use steam::connection::fetch_cm_servers;
+use steam::depot::AppId;
+use steam::depot::CellId;
+use steam::depot::DepotId;
+use steam::depot::ManifestId;
 use steam::messages::EMsg;
-use crate::cli::{Action, Options, OutputFormat};
-use crate::errors::CliError;
 
 fn fmt_size(bytes: u64, raw: bool) -> String {
     if raw {
@@ -56,9 +63,7 @@ async fn main() {
     } else {
         "steam=warn,steam_client=warn,depotdownloader=warn"
     };
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .init();
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let raw_errors = opts.raw_errors;
     let result = match opts.action {
@@ -74,7 +79,6 @@ async fn main() {
         std::process::exit(1);
     }
 }
-
 
 async fn discover_servers(cell_id: u32) -> Vec<CmServer> {
     let http = reqwest::Client::new();
@@ -218,7 +222,12 @@ async fn do_login(
         let logon_body = build_logon_body(opts);
         let mut logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
 
-        let anon_id = steam::types::SteamId::from_parts(steam::enums::EUniverse::Public as u8, steam::enums::EAccountType::AnonUser as u8, 0, 0);
+        let anon_id = steam::types::SteamId::from_parts(
+            steam::enums::EUniverse::Public as u8,
+            steam::enums::EAccountType::AnonUser as u8,
+            0,
+            0,
+        );
         logon_msg.header.steamid = Some(anon_id.raw());
         logon_msg.header.client_sessionid = Some(0);
 
@@ -240,14 +249,18 @@ async fn authenticate_qr(
 
     let session = client.begin_auth_session_via_qr(request).await?;
 
-    let challenge_url = session.challenge_url.as_deref().ok_or("no QR challenge URL")?;
+    let challenge_url = session
+        .challenge_url
+        .as_deref()
+        .ok_or("no QR challenge URL")?;
     let client_id = session.client_id.ok_or("no client_id")?;
     let request_id = session.request_id.as_ref().ok_or("no request_id")?;
 
     // Render QR code to terminal
     let qr = qrcode::QrCode::new(challenge_url.as_bytes())
         .map_err(|e| format!("Failed to generate QR code: {e}"))?;
-    let image = qr.render::<char>()
+    let image = qr
+        .render::<char>()
         .quiet_zone(false)
         .module_dimensions(2, 1)
         .build();
@@ -278,7 +291,9 @@ async fn authenticate_credentials(
     username: &str,
     opts: &Options,
 ) -> Result<String, CliError> {
-    use rsa::{Oaep, RsaPublicKey, BigUint};
+    use rsa::BigUint;
+    use rsa::Oaep;
+    use rsa::RsaPublicKey;
     use sha1::Sha1;
 
     // Get the password, prompting if not provided
@@ -299,12 +314,9 @@ async fn authenticate_credentials(
     let timestamp = rsa_response.timestamp.ok_or("missing RSA timestamp")?;
 
     // Step 2: RSA-encrypt the password
-    let n = BigUint::parse_bytes(modulus.as_bytes(), 16)
-        .ok_or("invalid RSA modulus hex")?;
-    let e = BigUint::parse_bytes(exponent.as_bytes(), 16)
-        .ok_or("invalid RSA exponent hex")?;
-    let public_key = RsaPublicKey::new(n, e)
-        .map_err(|e| format!("invalid RSA key: {e}"))?;
+    let n = BigUint::parse_bytes(modulus.as_bytes(), 16).ok_or("invalid RSA modulus hex")?;
+    let e = BigUint::parse_bytes(exponent.as_bytes(), 16).ok_or("invalid RSA exponent hex")?;
+    let public_key = RsaPublicKey::new(n, e).map_err(|e| format!("invalid RSA key: {e}"))?;
 
     let padding = Oaep::new::<Sha1>();
     let mut rng = rsa::rand_core::OsRng;
@@ -312,8 +324,8 @@ async fn authenticate_credentials(
         .encrypt(&mut rng, padding, password.as_bytes())
         .map_err(|e| format!("RSA encryption failed: {e}"))?;
 
-    let encrypted_password_b64 = base64::engine::general_purpose::STANDARD
-        .encode(&encrypted_password);
+    let encrypted_password_b64 =
+        base64::engine::general_purpose::STANDARD.encode(&encrypted_password);
 
     // Step 3: Begin auth session
     let begin_request = steam::generated::CAuthenticationBeginAuthSessionViaCredentialsRequest {
@@ -329,7 +341,9 @@ async fn authenticate_credentials(
         .begin_auth_session_via_credentials(begin_request)
         .await?;
 
-    let client_id = session.client_id.ok_or("missing client_id in auth session")?;
+    let client_id = session
+        .client_id
+        .ok_or("missing client_id in auth session")?;
     let request_id = session.request_id.as_ref().ok_or("missing request_id")?;
     let steam_id = session.steam_id.ok_or("missing steam_id")?;
 
@@ -389,7 +403,6 @@ async fn authenticate_credentials(
 }
 
 use base64::Engine;
-
 
 async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), CliError> {
     let app_id = AppId(args.app);
@@ -461,9 +474,13 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), CliError> 
             println!();
 
             println!("Branches:");
-            println!("  {:<20} {:>10} {:>22} {}", "NAME", "BUILD", "UPDATED", "FLAGS");
+            println!("  {:<20} {:>10} {:>22} FLAGS", "NAME", "BUILD", "UPDATED");
             for b in &overview.branches {
-                let flags = if b.password_required { "[password]" } else { "" };
+                let flags = if b.password_required {
+                    "[password]"
+                } else {
+                    ""
+                };
                 let updated = b.time_updated.map(fmt_timestamp_u64).unwrap_or_default();
                 println!(
                     "  {:<20} {:>10} {:>22} {}",
@@ -476,7 +493,7 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), CliError> 
             println!();
 
             println!("Depots:");
-            println!("  {:<12} {:<30} {:<20} {}", "ID", "NAME", "OS", "ARCH");
+            println!("  {:<12} {:<30} {:<20} ARCH", "ID", "NAME", "OS");
             for d in &overview.depots {
                 println!(
                     "  {:<12} {:<30} {:<20} {}",
@@ -495,7 +512,9 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), CliError> 
                         println!(
                             "  depot {:<10} → {}",
                             m.depot_id.0,
-                            m.manifest_id.map(|id| id.0.to_string()).unwrap_or_else(|| "—".into()),
+                            m.manifest_id
+                                .map(|id| id.0.to_string())
+                                .unwrap_or_else(|| "—".into()),
                         );
                     }
                 }
@@ -505,7 +524,6 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), CliError> 
 
     Ok(())
 }
-
 
 async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), CliError> {
     let app_id = AppId(args.app);
@@ -580,9 +598,14 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
             Some(&id) => id,
             None => {
                 resolve_manifest_id(
-                    &client, &app_infos, app_id, depot_id,
-                    &args.branch, args.beta_password.as_deref(),
-                ).await?
+                    &client,
+                    &app_infos,
+                    app_id,
+                    depot_id,
+                    &args.branch,
+                    args.beta_password.as_deref(),
+                )
+                .await?
             }
         };
 
@@ -604,7 +627,10 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
         } else {
             let manifest_bytes = cdn
                 .download_manifest(
-                    &cdn_servers[0], depot_id, manifest_id, request_code,
+                    &cdn_servers[0],
+                    depot_id,
+                    manifest_id,
+                    request_code,
                     cdn_auth.token.as_deref(),
                 )
                 .await?;
@@ -624,7 +650,8 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
         tracing::info!(
             "Manifest: {} files, {}",
             manifest.files.len(),
-            manifest.total_uncompressed_size
+            manifest
+                .total_uncompressed_size
                 .map(|s| fmt_size(s, opts.raw_bytes))
                 .unwrap_or_else(|| "unknown size".into()),
         );
@@ -634,10 +661,14 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
 
         // Build file filter from CLI args
         let file_filter = if let Some(ref path) = args.filelist {
-            Some(steam_client::download::FileFilter::from_filelist(std::path::Path::new(path))?)
+            Some(steam_client::download::FileFilter::from_filelist(
+                std::path::Path::new(path),
+            )?)
         } else if let Some(ref pattern) = args.file_regex {
-            Some(steam_client::download::FileFilter::from_regex(pattern)
-                .map_err(|e| -> CliError { format!("Invalid regex: {e}").into() })?)
+            Some(
+                steam_client::download::FileFilter::from_regex(pattern)
+                    .map_err(|e| -> CliError { format!("Invalid regex: {e}").into() })?,
+            )
         } else {
             None
         };
@@ -700,7 +731,6 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
     Ok(())
 }
 
-
 async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), CliError> {
     let app_id = AppId(args.app);
     let client = connect_and_login(opts).await?;
@@ -724,7 +754,9 @@ async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), 
                     "{:<12} {:<30} {:>22}",
                     e.depot_id.0,
                     e.depot_name.as_deref().unwrap_or(""),
-                    e.manifest_id.map(|id| id.0.to_string()).unwrap_or_else(|| "—".into()),
+                    e.manifest_id
+                        .map(|id| id.0.to_string())
+                        .unwrap_or_else(|| "—".into()),
                 );
             }
         }
@@ -732,7 +764,6 @@ async fn run_manifests(opts: &Options, args: &cli::ManifestsArgs) -> Result<(), 
 
     Ok(())
 }
-
 
 async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), CliError> {
     let app_id = AppId(args.app);
@@ -746,13 +777,15 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), CliError
         None => {
             // Auto-discover manifest ID from branch via PICS
             let app_infos = get_app_info(&client, &[app_id]).await?;
-            discover_manifest_id(&app_infos, depot_id, &args.branch)
-                .ok_or_else(|| -> CliError {
+            discover_manifest_id(&app_infos, depot_id, &args.branch).ok_or_else(
+                || -> CliError {
                     format!(
                         "No manifest found for depot {depot_id} on branch '{}'",
                         args.branch
-                    ).into()
-                })?
+                    )
+                    .into()
+                },
+            )?
         }
     };
 
@@ -773,7 +806,10 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), CliError
     let cdn = steam::cdn::CdnClient::new()?;
     let manifest_bytes = cdn
         .download_manifest(
-            &cdn_servers[0], depot_id, manifest_id, request_code,
+            &cdn_servers[0],
+            depot_id,
+            manifest_id,
+            request_code,
             cdn_auth.token.as_deref(),
         )
         .await?;
@@ -826,7 +862,6 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), CliError
     Ok(())
 }
 
-
 async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), CliError> {
     let pubfile_id = match (args.pubfile, args.ugc) {
         (Some(id), _) => id,
@@ -867,93 +902,94 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
         .unwrap_or_else(|| PathBuf::from("workshop"));
 
     // If there's a direct file URL, download via HTTP
-    if let Some(ref url) = details.file_url {
-        if !url.is_empty() {
-            let filename = details
-                .filename
-                .as_deref()
-                .unwrap_or("workshop_item");
+    if let Some(ref url) = details.file_url
+        && !url.is_empty()
+    {
+        let filename = details.filename.as_deref().unwrap_or("workshop_item");
 
-            tracing::info!("Downloading {filename} from {url}");
-            let http = reqwest::Client::new();
-            let resp = http.get(url).send().await?.error_for_status()?;
-            let bytes = resp.bytes().await?;
+        tracing::info!("Downloading {filename} from {url}");
+        let http = reqwest::Client::new();
+        let resp = http.get(url).send().await?.error_for_status()?;
+        let bytes = resp.bytes().await?;
 
-            let out_path = output.join(filename);
-            if let Some(parent) = out_path.parent() {
-                tokio::fs::create_dir_all(parent).await?;
-            }
-            tokio::fs::write(&out_path, &bytes).await?;
-            tracing::info!("Saved to {}", out_path.display());
-            return Ok(());
+        let out_path = output.join(filename);
+        if let Some(parent) = out_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
         }
+        tokio::fs::write(&out_path, &bytes).await?;
+        tracing::info!("Saved to {}", out_path.display());
+        return Ok(());
     }
 
     // Otherwise, download via depot manifest using hcontent_file
-    if let Some(hcontent) = details.hcontent_file {
-        if hcontent > 0 {
-            let manifest_id = ManifestId(hcontent);
-            let depot_id = DepotId(app_id);
-            let cell_id = CellId(opts.cell_id.unwrap_or(0));
+    if let Some(hcontent) = details.hcontent_file
+        && hcontent > 0
+    {
+        let manifest_id = ManifestId(hcontent);
+        let depot_id = DepotId(app_id);
+        let cell_id = CellId(opts.cell_id.unwrap_or(0));
 
-            tracing::info!("Downloading via depot manifest (manifest={manifest_id})");
+        tracing::info!("Downloading via depot manifest (manifest={manifest_id})");
 
-            let cdn_servers = client.get_cdn_servers(cell_id, None).await?;
-            if cdn_servers.is_empty() {
-                return Err("No CDN servers available".into());
-            }
-
-            let depot_key = client.get_depot_decryption_key(depot_id, AppId(app_id)).await?;
-
-            let request_code = client
-                .get_manifest_request_code(AppId(app_id), depot_id, manifest_id, None, None)
-                .await?
-                .unwrap_or(0);
-
-            let cdn_auth = client
-                .get_cdn_auth_token(AppId(app_id), depot_id, &cdn_servers[0].host)
-                .await?;
-
-            let cdn = steam::cdn::CdnClient::new()?;
-            let manifest_bytes = cdn
-                .download_manifest(
-                    &cdn_servers[0], depot_id, manifest_id, request_code,
-                    cdn_auth.token.as_deref(),
-                )
-                .await?;
-
-            let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
-            if manifest.filenames_encrypted {
-                let _ = manifest.decrypt_filenames(&depot_key);
-            }
-
-            tracing::info!("Workshop manifest: {} files", manifest.files.len());
-
-            let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
-            let progress_handle = download::spawn_progress_renderer(event_rx);
-
-            let job = steam_client::download::DepotJob::builder()
-                .cdn(cdn, cdn_servers[0].clone(), cdn_auth.token)
-                .depot_id(depot_id)
-                .depot_key(depot_key)
-                .install_dir(output)
-                .max_downloads(opts.max_downloads)
-                .event_sender(event_tx)
-                .build()
-                .map_err(|e| -> CliError { e.into() })?;
-
-            job.download(&manifest).await?;
-            drop(job);
-            progress_handle.await?;
-
-            tracing::info!("Workshop download complete");
-            return Ok(());
+        let cdn_servers = client.get_cdn_servers(cell_id, None).await?;
+        if cdn_servers.is_empty() {
+            return Err("No CDN servers available".into());
         }
+
+        let depot_key = client
+            .get_depot_decryption_key(depot_id, AppId(app_id))
+            .await?;
+
+        let request_code = client
+            .get_manifest_request_code(AppId(app_id), depot_id, manifest_id, None, None)
+            .await?
+            .unwrap_or(0);
+
+        let cdn_auth = client
+            .get_cdn_auth_token(AppId(app_id), depot_id, &cdn_servers[0].host)
+            .await?;
+
+        let cdn = steam::cdn::CdnClient::new()?;
+        let manifest_bytes = cdn
+            .download_manifest(
+                &cdn_servers[0],
+                depot_id,
+                manifest_id,
+                request_code,
+                cdn_auth.token.as_deref(),
+            )
+            .await?;
+
+        let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
+        if manifest.filenames_encrypted {
+            let _ = manifest.decrypt_filenames(&depot_key);
+        }
+
+        tracing::info!("Workshop manifest: {} files", manifest.files.len());
+
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let progress_handle = download::spawn_progress_renderer(event_rx);
+
+        let job = steam_client::download::DepotJob::builder()
+            .cdn(cdn, cdn_servers[0].clone(), cdn_auth.token)
+            .depot_id(depot_id)
+            .depot_key(depot_key)
+            .install_dir(output)
+            .max_downloads(opts.max_downloads)
+            .event_sender(event_tx)
+            .build()
+            .map_err(|e| -> CliError { e.into() })?;
+
+        job.download(&manifest).await?;
+        drop(job);
+        progress_handle.await?;
+
+        tracing::info!("Workshop download complete");
+        return Ok(());
     }
 
     Err("Workshop item has no downloadable content".into())
 }
-
 
 /// Get product info for an app, handling missing access tokens.
 async fn get_app_info(
@@ -994,7 +1030,8 @@ fn build_logon_body(opts: &Options) -> Vec<u8> {
 
 /// Parse KV data from a PICS app info response (text or binary format).
 fn parse_app_kv(info: &steam::apps::AppInfo) -> Option<steam::types::key_value::KeyValue> {
-    use steam::types::key_value::{parse_binary_kv, parse_text_kv};
+    use steam::types::key_value::parse_binary_kv;
+    use steam::types::key_value::parse_text_kv;
 
     let kv_data = info.kv_data.as_ref()?;
 
@@ -1043,41 +1080,52 @@ struct DepotFilter<'a> {
 impl DepotFilter<'_> {
     fn matches(&self, depot: &DepotInfo) -> bool {
         // OS filter
-        if !self.all_platforms {
-            if let (Some(filter_os), Some(depot_os)) = (self.os, depot.os_list.as_deref()) {
-                let os_list: Vec<&str> = depot_os.split(',').map(|s| s.trim()).collect();
-                if !os_list.iter().any(|o| o.eq_ignore_ascii_case(filter_os)) {
-                    tracing::debug!("Depot {} skipped: OS {depot_os} doesn't match {filter_os}", depot.id);
-                    return false;
-                }
+        if !self.all_platforms
+            && let (Some(filter_os), Some(depot_os)) = (self.os, depot.os_list.as_deref())
+        {
+            let os_list: Vec<&str> = depot_os.split(',').map(|s| s.trim()).collect();
+            if !os_list.iter().any(|o| o.eq_ignore_ascii_case(filter_os)) {
+                tracing::debug!(
+                    "Depot {} skipped: OS {depot_os} doesn't match {filter_os}",
+                    depot.id
+                );
+                return false;
             }
         }
 
         // Architecture filter
-        if !self.all_archs {
-            if let (Some(filter_arch), Some(depot_arch)) = (self.arch, depot.os_arch.as_deref()) {
-                if !depot_arch.eq_ignore_ascii_case(filter_arch) {
-                    tracing::debug!("Depot {} skipped: arch {depot_arch} doesn't match {filter_arch}", depot.id);
-                    return false;
-                }
-            }
+        if !self.all_archs
+            && let (Some(filter_arch), Some(depot_arch)) = (self.arch, depot.os_arch.as_deref())
+            && !depot_arch.eq_ignore_ascii_case(filter_arch)
+        {
+            tracing::debug!(
+                "Depot {} skipped: arch {depot_arch} doesn't match {filter_arch}",
+                depot.id
+            );
+            return false;
         }
 
         // Language filter
-        if !self.all_languages {
-            if let (Some(filter_lang), Some(depot_lang)) = (self.language, depot.language.as_deref()) {
-                if !depot_lang.eq_ignore_ascii_case(filter_lang) {
-                    tracing::debug!("Depot {} skipped: language {depot_lang} doesn't match {filter_lang}", depot.id);
-                    return false;
-                }
-            }
+        if !self.all_languages
+            && let (Some(filter_lang), Some(depot_lang)) =
+                (self.language, depot.language.as_deref())
+            && !depot_lang.eq_ignore_ascii_case(filter_lang)
+        {
+            tracing::debug!(
+                "Depot {} skipped: language {depot_lang} doesn't match {filter_lang}",
+                depot.id
+            );
+            return false;
         }
 
         true
     }
 }
 
-fn discover_depots_filtered(app_infos: &[steam::apps::AppInfo], filter: &DepotFilter<'_>) -> Vec<DepotId> {
+fn discover_depots_filtered(
+    app_infos: &[steam::apps::AppInfo],
+    filter: &DepotFilter<'_>,
+) -> Vec<DepotId> {
     discover_depot_details(app_infos)
         .into_iter()
         .filter(|d| filter.matches(d))
@@ -1104,7 +1152,8 @@ fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> 
         if let KvValue::Children(children) = &depots_section.value {
             for (key, value) in children {
                 if let Ok(id) = key.parse::<u32>() {
-                    let str_field = |key: &str| value.get(key).and_then(|n| n.as_str()).map(String::from);
+                    let str_field =
+                        |key: &str| value.get(key).and_then(|n| n.as_str()).map(String::from);
                     let depot_from_app = value
                         .get("depotfromapp")
                         .and_then(|n| n.as_str())
@@ -1161,9 +1210,7 @@ fn discover_branches(app_infos: &[steam::apps::AppInfo]) -> Vec<BranchInfo> {
             None => continue,
         };
 
-        let branches_section = kv
-            .get("depots")
-            .and_then(|d| d.get("branches"));
+        let branches_section = kv.get("depots").and_then(|d| d.get("branches"));
 
         let branches_section = match branches_section {
             Some(b) => b,
@@ -1219,10 +1266,10 @@ fn discover_manifests_for_branch(
                     Err(_) => continue, // skip non-numeric keys like "branches"
                 };
 
-                if let Some(filter) = depot_filter {
-                    if depot_id != filter {
-                        continue;
-                    }
+                if let Some(filter) = depot_filter
+                    && depot_id != filter
+                {
+                    continue;
                 }
 
                 let depot_name = depot_kv

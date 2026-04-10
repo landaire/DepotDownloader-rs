@@ -1,8 +1,12 @@
-use std::io::{self, Write};
+use std::io::Write;
+use std::io::{self};
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::LittleEndian;
+use byteorder::ReadBytesExt;
+use byteorder::WriteBytesExt;
 
-use super::{EMSG_MASK, PROTO_MASK};
+use super::EMSG_MASK;
+use super::PROTO_MASK;
 use crate::error::ParseError;
 use crate::messages::EMsg;
 
@@ -82,9 +86,7 @@ impl ExtendedClientMsgHdr {
         let raw_emsg = reader
             .read_u32::<LittleEndian>()
             .map_err(|_| ParseError::UnexpectedEof)?;
-        let header_size = reader
-            .read_u8()
-            .map_err(|_| ParseError::UnexpectedEof)?;
+        let header_size = reader.read_u8().map_err(|_| ParseError::UnexpectedEof)?;
         let header_version = reader
             .read_u16::<LittleEndian>()
             .map_err(|_| ParseError::UnexpectedEof)?;
@@ -94,9 +96,7 @@ impl ExtendedClientMsgHdr {
         let source_job_id = reader
             .read_u64::<LittleEndian>()
             .map_err(|_| ParseError::UnexpectedEof)?;
-        let header_canary = reader
-            .read_u8()
-            .map_err(|_| ParseError::UnexpectedEof)?;
+        let header_canary = reader.read_u8().map_err(|_| ParseError::UnexpectedEof)?;
         let steam_id = reader
             .read_u64::<LittleEndian>()
             .map_err(|_| ParseError::UnexpectedEof)?;
@@ -192,7 +192,7 @@ pub fn parse_packet_header(data: &[u8]) -> Result<PacketHeader, ParseError> {
     let is_proto = (raw_emsg & PROTO_MASK) != 0;
 
     if is_proto {
-        let mut reader = &data[..];
+        let mut reader = data;
         let header = MsgHdrProtoBuf::parse(&mut reader)?;
         Ok(PacketHeader::Protobuf {
             header,
@@ -207,14 +207,14 @@ pub fn parse_packet_header(data: &[u8]) -> Result<PacketHeader, ParseError> {
                 | EMsg::CHANNEL_ENCRYPT_RESPONSE
                 | EMsg::CHANNEL_ENCRYPT_RESULT
         ) {
-            let mut reader = &data[..];
+            let mut reader = data;
             let header = MsgHdr::parse(&mut reader)?;
             Ok(PacketHeader::Simple {
                 header,
                 body: bytes::Bytes::copy_from_slice(reader),
             })
         } else {
-            let mut reader = &data[..];
+            let mut reader = data;
             let header = ExtendedClientMsgHdr::parse(&mut reader)?;
             Ok(PacketHeader::Extended {
                 header,

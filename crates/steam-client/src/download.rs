@@ -3,13 +3,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::Semaphore;
+use tokio::sync::mpsc;
 
 use steam::cdn::CdnClient;
 use steam::cdn::server::CdnServer;
+use steam::depot::ChunkId;
+use steam::depot::DepotId;
+use steam::depot::DepotKey;
 use steam::depot::chunk::process_chunk;
-use steam::depot::manifest::{DepotManifest, ManifestChunk};
-use steam::depot::{ChunkId, DepotId, DepotKey};
+use steam::depot::manifest::DepotManifest;
+use steam::depot::manifest::ManifestChunk;
 
 use crate::event::DownloadEvent;
 
@@ -30,7 +34,15 @@ pub struct CdnChunkFetcher {
 #[async_trait]
 impl ChunkFetcher for CdnChunkFetcher {
     async fn fetch_chunk(&self, depot_id: DepotId, chunk_id: &ChunkId) -> Result<Bytes, BoxError> {
-        Ok(self.cdn.download_chunk(&self.server, depot_id, chunk_id, self.cdn_auth_token.as_deref()).await?)
+        Ok(self
+            .cdn
+            .download_chunk(
+                &self.server,
+                depot_id,
+                chunk_id,
+                self.cdn_auth_token.as_deref(),
+            )
+            .await?)
     }
 }
 
@@ -91,9 +103,7 @@ impl FileFilter {
     pub fn matches(&self, filename: &str) -> bool {
         let normalized = filename.replace('\\', "/");
         match self {
-            Self::FileList(list) => list
-                .iter()
-                .any(|f| f.eq_ignore_ascii_case(&normalized)),
+            Self::FileList(list) => list.iter().any(|f| f.eq_ignore_ascii_case(&normalized)),
             Self::Regex(re) => re.is_match(&normalized),
         }
     }
@@ -121,53 +131,67 @@ impl DepotJob {
             };
 
             // Apply file filter
-            if let Some(ref filter) = self.file_filter {
-                if !filter.matches(&filename) {
-                    send_event!(self.event_tx, DownloadEvent::FileSkipped {
+            if let Some(ref filter) = self.file_filter
+                && !filter.matches(&filename)
+            {
+                send_event!(
+                    self.event_tx,
+                    DownloadEvent::FileSkipped {
                         depot_id: self.depot_id,
                         filename,
-                    });
-                    files_completed += 1;
-                    continue;
-                }
+                    }
+                );
+                files_completed += 1;
+                continue;
             }
 
             // Skip directories (flag 0x40 = directory)
-            if file.flags.is_some_and(|f| steam::enums::DepotFileFlags(f).is_directory()) {
-                send_event!(self.event_tx, DownloadEvent::FileSkipped {
-                    depot_id: self.depot_id,
-                    filename,
-                });
+            if file
+                .flags
+                .is_some_and(|f| steam::enums::DepotFileFlags(f).is_directory())
+            {
+                send_event!(
+                    self.event_tx,
+                    DownloadEvent::FileSkipped {
+                        depot_id: self.depot_id,
+                        filename,
+                    }
+                );
                 files_completed += 1;
-                send_event!(self.event_tx, DownloadEvent::DepotProgress {
-                    depot_id: self.depot_id,
-                    files_completed,
-                    files_total,
-                });
+                send_event!(
+                    self.event_tx,
+                    DownloadEvent::DepotProgress {
+                        depot_id: self.depot_id,
+                        files_completed,
+                        files_total,
+                    }
+                );
                 continue;
             }
 
             // Find matching file in previous manifest for delta comparison
-            let old_file = self.previous_manifest.as_ref()
-                .and_then(|old| {
-                    old.files.iter()
-                        .find(|f| f.filename.as_deref() == Some(&filename))
-                });
+            let old_file = self.previous_manifest.as_ref().and_then(|old| {
+                old.files
+                    .iter()
+                    .find(|f| f.filename.as_deref() == Some(&filename))
+            });
 
             // Skip entirely if the file content hash is unchanged
-            if let Some(old) = old_file {
-                if old.sha_content == file.sha_content
-                    && file.sha_content.is_some()
-                    && self.install_dir.join(&filename).exists()
-                {
-                    tracing::debug!("{filename}: unchanged, skipping");
-                    send_event!(self.event_tx, DownloadEvent::FileSkipped {
+            if let Some(old) = old_file
+                && old.sha_content == file.sha_content
+                && file.sha_content.is_some()
+                && self.install_dir.join(&filename).exists()
+            {
+                tracing::debug!("{filename}: unchanged, skipping");
+                send_event!(
+                    self.event_tx,
+                    DownloadEvent::FileSkipped {
                         depot_id: self.depot_id,
                         filename,
-                    });
-                    files_completed += 1;
-                    continue;
-                }
+                    }
+                );
+                files_completed += 1;
+                continue;
             }
 
             let old_chunks = old_file.map(|f| f.chunks.clone());
@@ -181,12 +205,15 @@ impl DepotJob {
                 filename: filename.clone(),
             };
 
-            send_event!(self.event_tx, DownloadEvent::FileStarted {
-                depot_id: self.depot_id,
-                filename,
-                total_chunks: task.chunks.len(),
-                file_size: file.size,
-            });
+            send_event!(
+                self.event_tx,
+                DownloadEvent::FileStarted {
+                    depot_id: self.depot_id,
+                    filename,
+                    total_chunks: task.chunks.len(),
+                    file_size: file.size,
+                }
+            );
 
             let job = self.clone_shared();
             let handle = tokio::spawn(async move {
@@ -195,10 +222,13 @@ impl DepotJob {
                     // Set executable permissions on Unix
                     set_executable_if_needed(&task);
 
-                    send_event!(job.event_tx, DownloadEvent::FileCompleted {
-                        depot_id: job.depot_id,
-                        filename: task.filename.clone(),
-                    });
+                    send_event!(
+                        job.event_tx,
+                        DownloadEvent::FileCompleted {
+                            depot_id: job.depot_id,
+                            filename: task.filename.clone(),
+                        }
+                    );
                 }
                 result
             });
@@ -209,16 +239,20 @@ impl DepotJob {
         for (handle, _) in handles {
             handle.await??;
             files_completed += 1;
-            send_event!(self.event_tx, DownloadEvent::DepotProgress {
-                depot_id: self.depot_id,
-                files_completed,
-                files_total,
-            });
+            send_event!(
+                self.event_tx,
+                DownloadEvent::DepotProgress {
+                    depot_id: self.depot_id,
+                    files_completed,
+                    files_total,
+                }
+            );
         }
 
         // Delete files that existed in the previous manifest but not in the new one
         if let Some(ref old_manifest) = self.previous_manifest {
-            let new_filenames: std::collections::HashSet<&str> = manifest.files
+            let new_filenames: std::collections::HashSet<&str> = manifest
+                .files
                 .iter()
                 .filter_map(|f| f.filename.as_deref())
                 .collect();
@@ -229,7 +263,10 @@ impl DepotJob {
                     None => continue,
                 };
 
-                if old_file.flags.is_some_and(|f| steam::enums::DepotFileFlags(f).is_directory()) {
+                if old_file
+                    .flags
+                    .is_some_and(|f| steam::enums::DepotFileFlags(f).is_directory())
+                {
                     continue;
                 }
 
@@ -258,25 +295,24 @@ impl DepotJob {
     /// Adler32 checksum and only re-download corrupted chunks.
     async fn download_file(&self, task: &FileTask) -> Result<(), BoxError> {
         // If verifying and the file exists with correct size, check chunks
-        if self.verify && task.path.exists() {
-            if let Some(expected_size) = task.size {
-                if let Ok(meta) = tokio::fs::metadata(&task.path).await {
-                    if meta.len() == expected_size {
-                        let needs_download = verify_chunks(&task.path, &task.chunks).await?;
-                        if needs_download.is_empty() {
-                            tracing::debug!("{}: all chunks valid, skipping", task.filename);
-                            return Ok(());
-                        }
-                        tracing::info!(
-                            "{}: {} of {} chunks need re-download",
-                            task.filename,
-                            needs_download.len(),
-                            task.chunks.len()
-                        );
-                        // TODO: only download the bad chunks instead of the whole file
-                    }
-                }
+        if self.verify
+            && task.path.exists()
+            && let Some(expected_size) = task.size
+            && let Ok(meta) = tokio::fs::metadata(&task.path).await
+            && meta.len() == expected_size
+        {
+            let needs_download = verify_chunks(&task.path, &task.chunks).await?;
+            if needs_download.is_empty() {
+                tracing::debug!("{}: all chunks valid, skipping", task.filename);
+                return Ok(());
             }
+            tracing::info!(
+                "{}: {} of {} chunks need re-download",
+                task.filename,
+                needs_download.len(),
+                task.chunks.len()
+            );
+            // TODO: only download the bad chunks instead of the whole file
         }
 
         // Create staging path: .staging/<filename>
@@ -304,44 +340,51 @@ impl DepotJob {
         let file = Arc::new(tokio::sync::Mutex::new(file));
 
         // If we have a previous manifest, copy unchanged chunks from the old file
-        if let Some(ref old_chunks) = task.old_chunks {
-            if task.path.exists() {
-                let mut copied = 0usize;
-                let old_file = tokio::fs::File::open(&task.path).await?;
-                let old_file = Arc::new(tokio::sync::Mutex::new(old_file));
+        if let Some(ref old_chunks) = task.old_chunks
+            && task.path.exists()
+        {
+            let mut copied = 0usize;
+            let old_file = tokio::fs::File::open(&task.path).await?;
+            let old_file = Arc::new(tokio::sync::Mutex::new(old_file));
 
-                for chunk in &task.chunks {
-                    let chunk_id = match &chunk.id {
-                        Some(id) => id,
-                        None => continue,
-                    };
+            for chunk in &task.chunks {
+                let chunk_id = match &chunk.id {
+                    Some(id) => id,
+                    None => continue,
+                };
 
-                    // Find matching chunk in old manifest by ID
-                    let old_match = old_chunks.iter().find(|oc| oc.id.as_ref() == Some(chunk_id));
+                // Find matching chunk in old manifest by ID
+                let old_match = old_chunks
+                    .iter()
+                    .find(|oc| oc.id.as_ref() == Some(chunk_id));
 
-                    if let Some(old_chunk) = old_match {
-                        if let (Some(old_offset), Some(new_offset), Some(size)) =
-                            (old_chunk.offset, chunk.offset, chunk.uncompressed_size)
-                        {
-                            use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+                if let Some(old_chunk) = old_match
+                    && let (Some(old_offset), Some(new_offset), Some(size)) =
+                        (old_chunk.offset, chunk.offset, chunk.uncompressed_size)
+                {
+                    use tokio::io::AsyncReadExt;
+                    use tokio::io::AsyncSeekExt;
+                    use tokio::io::AsyncWriteExt;
 
-                            // Read from old file, write to staging file
-                            let mut buf = vec![0u8; size as usize];
-                            let mut of = old_file.lock().await;
-                            of.seek(std::io::SeekFrom::Start(old_offset)).await?;
-                            if of.read_exact(&mut buf).await.is_ok() {
-                                let mut nf = file.lock().await;
-                                nf.seek(std::io::SeekFrom::Start(new_offset)).await?;
-                                nf.write_all(&buf).await?;
-                                copied += 1;
-                            }
-                        }
+                    // Read from old file, write to staging file
+                    let mut buf = vec![0u8; size as usize];
+                    let mut of = old_file.lock().await;
+                    of.seek(std::io::SeekFrom::Start(old_offset)).await?;
+                    if of.read_exact(&mut buf).await.is_ok() {
+                        let mut nf = file.lock().await;
+                        nf.seek(std::io::SeekFrom::Start(new_offset)).await?;
+                        nf.write_all(&buf).await?;
+                        copied += 1;
                     }
                 }
+            }
 
-                if copied > 0 {
-                    tracing::debug!("{}: reused {copied} of {} chunks from previous version", task.filename, task.chunks.len());
-                }
+            if copied > 0 {
+                tracing::debug!(
+                    "{}: reused {copied} of {} chunks from previous version",
+                    task.filename,
+                    task.chunks.len()
+                );
             }
         }
 
@@ -357,10 +400,11 @@ impl DepotJob {
             };
 
             // Skip chunks that were already copied from the previous version
-            if let Some(ref old_chunks) = task.old_chunks {
-                if task.path.exists() && old_chunks.iter().any(|oc| oc.id == Some(chunk_id)) {
-                    continue;
-                }
+            if let Some(ref old_chunks) = task.old_chunks
+                && task.path.exists()
+                && old_chunks.iter().any(|oc| oc.id == Some(chunk_id))
+            {
+                continue;
             }
 
             let job = self.clone_shared();
@@ -373,18 +417,14 @@ impl DepotJob {
                 let _permit = job.semaphore.acquire().await?;
                 tracing::debug!("Fetching chunk {chunk_id}");
 
-                let raw = match job
-                    .fetcher
-                    .fetch_chunk(job.depot_id, &chunk_id)
-                    .await
-                {
+                let raw = match job.fetcher.fetch_chunk(job.depot_id, &chunk_id).await {
                     Ok(data) => {
                         tracing::debug!("Downloaded chunk {chunk_id} ({} bytes)", data.len());
                         data
                     }
                     Err(e) => {
                         tracing::error!("Failed to download chunk {chunk_id}: {e}");
-                        return Err(e.into());
+                        return Err(e);
                     }
                 };
 
@@ -402,17 +442,21 @@ impl DepotJob {
                 let bytes_written = decompressed.len();
 
                 if let Some(off) = offset {
-                    use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+                    use tokio::io::AsyncSeekExt;
+                    use tokio::io::AsyncWriteExt;
                     let mut f = file.lock().await;
                     f.seek(std::io::SeekFrom::Start(off)).await?;
                     f.write_all(&decompressed).await?;
                 }
 
-                send_event!(job.event_tx, DownloadEvent::ChunkCompleted {
-                    depot_id: job.depot_id,
-                    chunk_id,
-                    bytes_written,
-                });
+                send_event!(
+                    job.event_tx,
+                    DownloadEvent::ChunkCompleted {
+                        depot_id: job.depot_id,
+                        chunk_id,
+                        bytes_written,
+                    }
+                );
 
                 Ok::<(), BoxError>(())
             });
@@ -456,19 +500,21 @@ async fn verify_chunks(
     chunks: &[ManifestChunk],
 ) -> Result<Vec<usize>, BoxError> {
     use steam::util::checksum::SteamAdler32;
-    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    use tokio::io::AsyncReadExt;
+    use tokio::io::AsyncSeekExt;
 
     let mut file = tokio::fs::File::open(path).await?;
     let mut bad_indices = Vec::new();
 
     for (i, chunk) in chunks.iter().enumerate() {
-        let (offset, size, expected_checksum) = match (chunk.offset, chunk.uncompressed_size, chunk.checksum) {
-            (Some(o), Some(s), Some(c)) => (o, s, c),
-            _ => {
-                bad_indices.push(i);
-                continue;
-            }
-        };
+        let (offset, size, expected_checksum) =
+            match (chunk.offset, chunk.uncompressed_size, chunk.checksum) {
+                (Some(o), Some(s), Some(c)) => (o, s, c),
+                _ => {
+                    bad_indices.push(i);
+                    continue;
+                }
+            };
 
         file.seek(std::io::SeekFrom::Start(offset)).await?;
         let mut buf = vec![0u8; size as usize];
@@ -493,14 +539,20 @@ fn set_executable_if_needed(task: &FileTask) {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if task.flags.is_some_and(|f| steam::enums::DepotFileFlags(f).is_executable()) {
+        if task
+            .flags
+            .is_some_and(|f| steam::enums::DepotFileFlags(f).is_executable())
+        {
             if let Ok(metadata) = std::fs::metadata(&task.path) {
                 let mut perms = metadata.permissions();
                 let mode = perms.mode();
                 // Add execute bits for user/group/other
                 perms.set_mode(mode | 0o111);
                 if let Err(e) = std::fs::set_permissions(&task.path, perms) {
-                    tracing::warn!("Failed to set executable permissions on {}: {e}", task.filename);
+                    tracing::warn!(
+                        "Failed to set executable permissions on {}: {e}",
+                        task.filename
+                    );
                 }
             }
         }
@@ -540,7 +592,11 @@ pub struct DepotJobBuilder {
 
 impl DepotJobBuilder {
     pub fn cdn(self, cdn: CdnClient, server: CdnServer, cdn_auth_token: Option<String>) -> Self {
-        self.fetcher(Arc::new(CdnChunkFetcher { cdn, server, cdn_auth_token }))
+        self.fetcher(Arc::new(CdnChunkFetcher {
+            cdn,
+            server,
+            cdn_auth_token,
+        }))
     }
 
     pub fn fetcher(mut self, fetcher: Arc<dyn ChunkFetcher>) -> Self {
@@ -557,8 +613,6 @@ impl DepotJobBuilder {
         self.depot_key = Some(key);
         self
     }
-
-
 
     pub fn install_dir(mut self, dir: PathBuf) -> Self {
         self.install_dir = Some(dir);
@@ -592,7 +646,9 @@ impl DepotJobBuilder {
 
     pub fn build(self) -> Result<DepotJob, &'static str> {
         Ok(DepotJob {
-            fetcher: self.fetcher.ok_or("fetcher is required (use .cdn() or .fetcher())")?,
+            fetcher: self
+                .fetcher
+                .ok_or("fetcher is required (use .cdn() or .fetcher())")?,
             depot_id: self.depot_id.ok_or("depot_id is required")?,
             depot_key: self.depot_key.ok_or("depot_key is required")?,
             install_dir: self.install_dir.ok_or("install_dir is required")?,

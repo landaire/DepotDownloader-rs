@@ -1,4 +1,5 @@
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
+use indicatif::ProgressStyle;
 use steam_client::event::DownloadEvent;
 use tokio::sync::mpsc;
 

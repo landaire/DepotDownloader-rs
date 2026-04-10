@@ -33,8 +33,8 @@ fn main() {
     .collect();
 
     // Use protox to parse protos (pure Rust, no system protoc needed)
-    let file_descriptors = protox::compile(&proto_files, &[&proto_dir])
-        .expect("Failed to parse proto files");
+    let file_descriptors =
+        protox::compile(&proto_files, [&proto_dir]).expect("Failed to parse proto files");
 
     let out_dir = PathBuf::from("src/generated");
     std::fs::create_dir_all(&out_dir).expect("Failed to create generated dir");

@@ -1,5 +1,6 @@
-use clap::{Parser, Subcommand, ValueEnum};
-
+use clap::Parser;
+use clap::Subcommand;
+use clap::ValueEnum;
 
 /// Steam depot content downloader.
 #[derive(Debug, Parser)]
@@ -56,6 +57,7 @@ pub struct AuthOptions {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     /// Show app info: branches, depots, and their manifests.
     Info(InfoArgs),
@@ -166,7 +168,6 @@ pub struct InfoArgs {
     pub format: OutputFormat,
 }
 
-
 /// List all depot manifests for a branch.
 #[derive(Debug, Parser)]
 pub struct ManifestsArgs {
@@ -230,12 +231,15 @@ pub struct WorkshopArgs {
     pub output: Option<String>,
 }
 
-
 /// DepotDownloader-compatible flat argument style.
 ///
 /// Activated by setting the `DD_COMPAT=1` environment variable.
 #[derive(Debug, Parser)]
-#[command(name = "depotdownloader", version, about = "Steam depot content downloader (compat mode)")]
+#[command(
+    name = "depotdownloader",
+    version,
+    about = "Steam depot content downloader (compat mode)"
+)]
 pub struct CompatCli {
     #[arg(short, long, alias = "user")]
     pub username: Option<String>,
@@ -319,7 +323,6 @@ pub struct CompatCli {
     pub debug: bool,
 }
 
-
 /// Normalized options produced by either CLI mode.
 ///
 /// The rest of the binary works against this - no branching on CLI mode.
@@ -336,6 +339,7 @@ pub struct Options {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Action {
     Info(InfoArgs),
     Manifests(ManifestsArgs),

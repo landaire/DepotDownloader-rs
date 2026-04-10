@@ -6,19 +6,18 @@
 
 use prost::Message;
 
-use crate::client::{Encrypted, SteamClient};
+use crate::client::Encrypted;
+use crate::client::SteamClient;
 use crate::error::Error;
-use crate::generated::{
-    CAuthenticationBeginAuthSessionViaCredentialsRequest,
-    CAuthenticationBeginAuthSessionViaCredentialsResponse,
-    CAuthenticationBeginAuthSessionViaQrRequest,
-    CAuthenticationBeginAuthSessionViaQrResponse,
-    CAuthenticationGetPasswordRsaPublicKeyResponse,
-    CAuthenticationGetPasswordRsaPublicKeyRequest,
-    CAuthenticationPollAuthSessionStatusRequest,
-    CAuthenticationPollAuthSessionStatusResponse,
-    CAuthenticationUpdateAuthSessionWithSteamGuardCodeRequest,
-};
+use crate::generated::CAuthenticationBeginAuthSessionViaCredentialsRequest;
+use crate::generated::CAuthenticationBeginAuthSessionViaCredentialsResponse;
+use crate::generated::CAuthenticationBeginAuthSessionViaQrRequest;
+use crate::generated::CAuthenticationBeginAuthSessionViaQrResponse;
+use crate::generated::CAuthenticationGetPasswordRsaPublicKeyRequest;
+use crate::generated::CAuthenticationGetPasswordRsaPublicKeyResponse;
+use crate::generated::CAuthenticationPollAuthSessionStatusRequest;
+use crate::generated::CAuthenticationPollAuthSessionStatusResponse;
+use crate::generated::CAuthenticationUpdateAuthSessionWithSteamGuardCodeRequest;
 
 /// Guard type for 2FA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +68,6 @@ pub struct AuthTokens {
     pub account_name: Option<String>,
 }
 
-
 impl SteamClient<Encrypted> {
     /// Get the RSA public key for encrypting a password.
     pub async fn get_password_rsa_public_key(
@@ -82,10 +80,7 @@ impl SteamClient<Encrypted> {
         .encode_to_vec();
 
         let resp = self
-            .call_service_method_non_authed(
-                "Authentication.GetPasswordRSAPublicKey#1",
-                &encoded,
-            )
+            .call_service_method_non_authed("Authentication.GetPasswordRSAPublicKey#1", &encoded)
             .await?;
 
         Ok(CAuthenticationGetPasswordRsaPublicKeyResponse::decode(
@@ -106,9 +101,7 @@ impl SteamClient<Encrypted> {
             )
             .await?;
 
-        let body = CAuthenticationBeginAuthSessionViaCredentialsResponse::decode(
-            &resp.body[..],
-        )?;
+        let body = CAuthenticationBeginAuthSessionViaCredentialsResponse::decode(&resp.body[..])?;
 
         Ok(AuthSession {
             client_id: body.client_id,
@@ -130,14 +123,10 @@ impl SteamClient<Encrypted> {
     ) -> Result<QrAuthSession, Error> {
         let encoded = request.encode_to_vec();
         let resp = self
-            .call_service_method_non_authed(
-                "Authentication.BeginAuthSessionViaQR#1",
-                &encoded,
-            )
+            .call_service_method_non_authed("Authentication.BeginAuthSessionViaQR#1", &encoded)
             .await?;
 
-        let body =
-            CAuthenticationBeginAuthSessionViaQrResponse::decode(&resp.body[..])?;
+        let body = CAuthenticationBeginAuthSessionViaQrResponse::decode(&resp.body[..])?;
 
         Ok(QrAuthSession {
             client_id: body.client_id,
@@ -166,23 +155,17 @@ impl SteamClient<Encrypted> {
         .encode_to_vec();
 
         let resp = self
-            .call_service_method_non_authed(
-                "Authentication.PollAuthSessionStatus#1",
-                &encoded,
-            )
+            .call_service_method_non_authed("Authentication.PollAuthSessionStatus#1", &encoded)
             .await?;
 
-        let body =
-            CAuthenticationPollAuthSessionStatusResponse::decode(&resp.body[..])?;
+        let body = CAuthenticationPollAuthSessionStatusResponse::decode(&resp.body[..])?;
 
         match (body.access_token, body.refresh_token) {
-            (Some(access), Some(refresh)) if !access.is_empty() => {
-                Ok(Some(AuthTokens {
-                    access_token: access,
-                    refresh_token: refresh,
-                    account_name: body.account_name,
-                }))
-            }
+            (Some(access), Some(refresh)) if !access.is_empty() => Ok(Some(AuthTokens {
+                access_token: access,
+                refresh_token: refresh,
+                account_name: body.account_name,
+            })),
             _ => Ok(None),
         }
     }

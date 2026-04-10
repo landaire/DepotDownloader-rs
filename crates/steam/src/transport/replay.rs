@@ -1,13 +1,15 @@
 //! Replay transport - feeds recorded packets back for testing.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 
 use super::Transport;
 use super::capture::CaptureFile;
-use crate::error::{ConnectionError, Error};
+use crate::error::ConnectionError;
+use crate::error::Error;
 
 /// A transport that replays packets from a capture file.
 ///

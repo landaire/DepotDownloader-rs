@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
+use steam::depot::DepotId;
+use steam::depot::ManifestId;
 use steam::depot::manifest::DepotManifest;
-use steam::depot::{DepotId, ManifestId};
 use steam::error::ManifestError;
 use steam::util::checksum::Sha1Hash;
 
@@ -21,7 +24,7 @@ fn extract_zip(data: &[u8]) -> Result<Vec<u8>, ManifestError> {
     let mut archive =
         zip::ZipArchive::new(cursor).map_err(|_| ManifestError::MissingSection("zip archive"))?;
 
-    if archive.len() == 0 {
+    if archive.is_empty() {
         return Err(ManifestError::MissingSection("empty zip archive"));
     }
 
@@ -62,11 +65,7 @@ impl ManifestCache {
     }
 
     /// Try to load a cached manifest. Returns None if not cached or checksum mismatch.
-    pub fn load(
-        &self,
-        depot_id: DepotId,
-        manifest_id: ManifestId,
-    ) -> Option<DepotManifest> {
+    pub fn load(&self, depot_id: DepotId, manifest_id: ManifestId) -> Option<DepotManifest> {
         let manifest_path = self.manifest_path(depot_id, manifest_id);
         let sha_path = self.sha_path(depot_id, manifest_id);
 
@@ -114,7 +113,10 @@ impl ManifestCache {
         std::fs::write(&manifest_path, &manifest_bytes)?;
         std::fs::write(&sha_path, sha.to_string())?;
 
-        tracing::debug!("Cached manifest {depot_id}_{manifest_id} ({} bytes)", manifest_bytes.len());
+        tracing::debug!(
+            "Cached manifest {depot_id}_{manifest_id} ({} bytes)",
+            manifest_bytes.len()
+        );
         Ok(())
     }
 }
@@ -141,13 +143,15 @@ impl DepotConfig {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
     pub fn get_installed(&self, depot_id: DepotId) -> Option<ManifestId> {
-        self.installed_manifests.get(&depot_id.0).copied().map(ManifestId)
+        self.installed_manifests
+            .get(&depot_id.0)
+            .copied()
+            .map(ManifestId)
     }
 
     pub fn set_installed(&mut self, depot_id: DepotId, manifest_id: ManifestId) {

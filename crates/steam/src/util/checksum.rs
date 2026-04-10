@@ -1,6 +1,7 @@
 use std::fmt;
 
-use sha1::{Digest, Sha1};
+use sha1::Digest;
+use sha1::Sha1;
 
 /// A SHA-1 hash (20 bytes).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -109,10 +110,7 @@ mod tests {
     #[test]
     fn sha1_known_value() {
         let hash = Sha1Hash::compute(b"");
-        assert_eq!(
-            hash.to_string(),
-            "da39a3ee5e6b4b0d3255bfef95601890afd80709"
-        );
+        assert_eq!(hash.to_string(), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
     }
 
     #[test]

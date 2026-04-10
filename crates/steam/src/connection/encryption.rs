@@ -1,7 +1,13 @@
 use aes::Aes256;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit, block_padding::Pkcs7};
-use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
-use hmac::{Hmac, Mac};
+use aes::cipher::BlockDecrypt;
+use aes::cipher::BlockEncrypt;
+use aes::cipher::KeyInit;
+use aes::cipher::block_padding::Pkcs7;
+use cbc::cipher::BlockDecryptMut;
+use cbc::cipher::BlockEncryptMut;
+use cbc::cipher::KeyIvInit;
+use hmac::Hmac;
+use hmac::Mac;
 use sha1::Sha1;
 
 use crate::error::CryptoError;
@@ -96,8 +102,8 @@ impl SessionCipher {
 
     /// Build the 16-byte IV: HMAC-SHA1(random_3 || plaintext)[0..13] || random_3
     fn build_iv(&self, random_3: &[u8], plaintext: &[u8]) -> [u8; 16] {
-        let mut mac = <HmacSha1 as Mac>::new_from_slice(&self.hmac_key)
-            .expect("HMAC accepts any key length");
+        let mut mac =
+            <HmacSha1 as Mac>::new_from_slice(&self.hmac_key).expect("HMAC accepts any key length");
         mac.update(random_3);
         mac.update(plaintext);
         let hmac_result = mac.finalize().into_bytes();

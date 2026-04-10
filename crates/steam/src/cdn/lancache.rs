@@ -41,9 +41,7 @@ fn is_private(ip: IpAddr) -> bool {
                 || (v4.octets()[0] == 172 && (16..32).contains(&v4.octets()[1]))
                 || (v4.octets()[0] == 192 && v4.octets()[1] == 168)
         }
-        IpAddr::V6(v6) => {
-            v6.is_loopback() || (v6.octets()[0] & 0xFE) == 0xFC
-        }
+        IpAddr::V6(v6) => v6.is_loopback() || (v6.octets()[0] & 0xFE) == 0xFC,
     }
 }
 

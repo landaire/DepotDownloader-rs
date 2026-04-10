@@ -1,14 +1,16 @@
 //! Recording transport - wraps a real transport and captures incoming packets to disk.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use tokio::sync::Mutex;
 
 use super::Transport;
-use super::capture::{CaptureFile, CapturedPacket};
+use super::capture::CaptureFile;
+use super::capture::CapturedPacket;
 
 /// A transport that records all incoming packets passing through it.
 ///

@@ -8,12 +8,18 @@
 //! [ManifestMagic::EndOfManifest as u32]
 //! ```
 
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::LittleEndian;
+use byteorder::ReadBytesExt;
 use prost::Message;
 
-use crate::depot::{ChunkId, DepotId, DepotKey, ManifestId};
+use crate::depot::ChunkId;
+use crate::depot::DepotId;
+use crate::depot::DepotKey;
+use crate::depot::ManifestId;
 use crate::error::ManifestError;
-use crate::generated::{ContentManifestMetadata, ContentManifestPayload, ContentManifestSignature};
+use crate::generated::ContentManifestMetadata;
+use crate::generated::ContentManifestPayload;
+use crate::generated::ContentManifestSignature;
 
 use crate::enums::ManifestMagic;
 
@@ -79,7 +85,10 @@ impl DepotManifest {
 
         // Sort files by name after decryption (matches SteamKit2 behavior)
         self.files.sort_by(|a, b| {
-            a.filename.as_deref().unwrap_or("").cmp(b.filename.as_deref().unwrap_or(""))
+            a.filename
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.filename.as_deref().unwrap_or(""))
         });
 
         self.filenames_encrypted = false;
@@ -128,38 +137,54 @@ impl DepotManifest {
         use std::io::Read;
 
         let mut r = data;
-        let _magic = r.read_u32::<LittleEndian>()
+        let _magic = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 header"))?;
-        let version = r.read_u32::<LittleEndian>()
+        let version = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 version"))?;
 
         if version != 4 {
             return Err(ManifestError::InvalidMagic(version));
         }
 
-        let depot_id = r.read_u32::<LittleEndian>()
+        let depot_id = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 depot_id"))?;
-        let manifest_gid = r.read_u64::<LittleEndian>()
+        let manifest_gid = r
+            .read_u64::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 manifest_gid"))?;
-        let creation_time = r.read_u32::<LittleEndian>()
+        let creation_time = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 creation_time"))?;
-        let filenames_encrypted = r.read_u32::<LittleEndian>()
-            .map_err(|_| ManifestError::MissingSection("v4 filenames_encrypted"))? != 0;
-        let total_uncompressed = r.read_u64::<LittleEndian>()
+        let filenames_encrypted = r
+            .read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 filenames_encrypted"))?
+            != 0;
+        let total_uncompressed = r
+            .read_u64::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 total_uncompressed"))?;
-        let total_compressed = r.read_u64::<LittleEndian>()
+        let total_compressed = r
+            .read_u64::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 total_compressed"))?;
-        let _chunk_count = r.read_u32::<LittleEndian>()
+        let _chunk_count = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 chunk_count"))?;
-        let _file_entry_count = r.read_u32::<LittleEndian>()
+        let _file_entry_count = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 file_entry_count"))?;
-        let file_mapping_size = r.read_u32::<LittleEndian>()
-            .map_err(|_| ManifestError::MissingSection("v4 file_mapping_size"))? as usize;
-        let _encrypted_crc = r.read_u32::<LittleEndian>()
+        let file_mapping_size = r
+            .read_u32::<LittleEndian>()
+            .map_err(|_| ManifestError::MissingSection("v4 file_mapping_size"))?
+            as usize;
+        let _encrypted_crc = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 encrypted_crc"))?;
-        let _decrypted_crc = r.read_u32::<LittleEndian>()
+        let _decrypted_crc = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 decrypted_crc"))?;
-        let _flags = r.read_u32::<LittleEndian>()
+        let _flags = r
+            .read_u32::<LittleEndian>()
             .map_err(|_| ManifestError::MissingSection("v4 flags"))?;
 
         // Parse file mappings
@@ -170,14 +195,18 @@ impl DepotManifest {
             let start = r.len();
 
             // Null-terminated filename
-            let nul_pos = r.iter().position(|&b| b == 0)
+            let nul_pos = r
+                .iter()
+                .position(|&b| b == 0)
                 .ok_or(ManifestError::MissingSection("v4 filename nul terminator"))?;
             let filename = String::from_utf8_lossy(&r[..nul_pos]).into_owned();
             r = &r[nul_pos + 1..];
 
-            let size = r.read_u64::<LittleEndian>()
+            let size = r
+                .read_u64::<LittleEndian>()
                 .map_err(|_| ManifestError::MissingSection("v4 file size"))?;
-            let flags = r.read_u32::<LittleEndian>()
+            let flags = r
+                .read_u32::<LittleEndian>()
                 .map_err(|_| ManifestError::MissingSection("v4 file flags"))?;
             let mut hash_content = [0u8; 20];
             r.read_exact(&mut hash_content)
@@ -185,7 +214,8 @@ impl DepotManifest {
             let mut _hash_filename = [0u8; 20];
             r.read_exact(&mut _hash_filename)
                 .map_err(|_| ManifestError::MissingSection("v4 hash_filename"))?;
-            let num_chunks = r.read_u32::<LittleEndian>()
+            let num_chunks = r
+                .read_u32::<LittleEndian>()
                 .map_err(|_| ManifestError::MissingSection("v4 num_chunks"))?;
 
             let mut chunks = Vec::with_capacity(num_chunks as usize);
@@ -193,13 +223,17 @@ impl DepotManifest {
                 let mut sha = [0u8; 20];
                 r.read_exact(&mut sha)
                     .map_err(|_| ManifestError::MissingSection("v4 chunk sha"))?;
-                let checksum = r.read_u32::<LittleEndian>()
+                let checksum = r
+                    .read_u32::<LittleEndian>()
                     .map_err(|_| ManifestError::MissingSection("v4 chunk checksum"))?;
-                let offset = r.read_u64::<LittleEndian>()
+                let offset = r
+                    .read_u64::<LittleEndian>()
                     .map_err(|_| ManifestError::MissingSection("v4 chunk offset"))?;
-                let uncompressed_size = r.read_u32::<LittleEndian>()
+                let uncompressed_size = r
+                    .read_u32::<LittleEndian>()
                     .map_err(|_| ManifestError::MissingSection("v4 chunk uncompressed"))?;
-                let compressed_size = r.read_u32::<LittleEndian>()
+                let compressed_size = r
+                    .read_u32::<LittleEndian>()
                     .map_err(|_| ManifestError::MissingSection("v4 chunk compressed"))?;
 
                 chunks.push(ManifestChunk {
@@ -263,16 +297,22 @@ impl DepotManifest {
 
             match ManifestMagic::from_u32(magic) {
                 Some(ManifestMagic::PayloadV5) => {
-                    payload = Some(ContentManifestPayload::decode(section_data)
-                        .map_err(|_| ManifestError::MissingSection("payload decode failed"))?);
+                    payload = Some(
+                        ContentManifestPayload::decode(section_data)
+                            .map_err(|_| ManifestError::MissingSection("payload decode failed"))?,
+                    );
                 }
                 Some(ManifestMagic::Metadata) => {
-                    metadata = Some(ContentManifestMetadata::decode(section_data)
-                        .map_err(|_| ManifestError::MissingSection("metadata decode failed"))?);
+                    metadata =
+                        Some(ContentManifestMetadata::decode(section_data).map_err(|_| {
+                            ManifestError::MissingSection("metadata decode failed")
+                        })?);
                 }
                 Some(ManifestMagic::Signature) => {
-                    _signature = Some(ContentManifestSignature::decode(section_data)
-                        .map_err(|_| ManifestError::MissingSection("signature decode failed"))?);
+                    _signature =
+                        Some(ContentManifestSignature::decode(section_data).map_err(|_| {
+                            ManifestError::MissingSection("signature decode failed")
+                        })?);
                 }
                 _ => return Err(ManifestError::InvalidMagic(magic)),
             }
@@ -337,17 +377,25 @@ fn try_sha_array(bytes: &[u8]) -> Option<[u8; 20]> {
 /// 5. Normalize path separators to OS convention
 fn decrypt_filename(encrypted_b64: &str, key: &DepotKey) -> Result<String, ManifestError> {
     use aes::Aes256;
-    use aes::cipher::{BlockDecrypt, KeyInit, block_padding::Pkcs7};
-    use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+    use aes::cipher::BlockDecrypt;
+    use aes::cipher::KeyInit;
+    use aes::cipher::block_padding::Pkcs7;
+    use cbc::cipher::BlockDecryptMut;
+    use cbc::cipher::KeyIvInit;
 
     // Strip all whitespace - encrypted filenames may contain line breaks
-    let cleaned: String = encrypted_b64.chars().filter(|c| !c.is_whitespace()).collect();
+    let cleaned: String = encrypted_b64
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
     let encrypted = base64::engine::general_purpose::STANDARD
         .decode(&cleaned)
         .map_err(|_| ManifestError::MissingSection("invalid base64 in filename"))?;
 
     if encrypted.len() < 32 {
-        return Err(ManifestError::MissingSection("encrypted filename too short"));
+        return Err(ManifestError::MissingSection(
+            "encrypted filename too short",
+        ));
     }
 
     // ECB-decrypt the first 16 bytes to get the IV
@@ -364,7 +412,10 @@ fn decrypt_filename(encrypted_b64: &str, key: &DepotKey) -> Result<String, Manif
         .map_err(|_| ManifestError::MissingSection("filename decryption failed"))?;
 
     // Strip trailing null bytes
-    let end = plaintext.iter().position(|&b| b == 0).unwrap_or(plaintext.len());
+    let end = plaintext
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(plaintext.len());
     let name = String::from_utf8_lossy(&plaintext[..end]).into_owned();
 
     // Normalize path separators
@@ -379,25 +430,23 @@ mod tests {
 
     fn make_test_manifest() -> Vec<u8> {
         let payload = ContentManifestPayload {
-            mappings: vec![
-                crate::generated::content_manifest_payload::FileMapping {
-                    filename: Some("test.txt".to_string()),
-                    size: Some(1024),
-                    flags: Some(0),
-                    sha_filename: None,
-                    sha_content: Some(vec![0xAA; 20]),
-                    chunks: vec![
-                        crate::generated::content_manifest_payload::file_mapping::ChunkData {
-                            sha: Some(vec![0xBB; 20]),
-                            crc: Some(0x12345678),
-                            offset: Some(0),
-                            cb_original: Some(1024),
-                            cb_compressed: Some(512),
-                        },
-                    ],
-                    linktarget: None,
-                },
-            ],
+            mappings: vec![crate::generated::content_manifest_payload::FileMapping {
+                filename: Some("test.txt".to_string()),
+                size: Some(1024),
+                flags: Some(0),
+                sha_filename: None,
+                sha_content: Some(vec![0xAA; 20]),
+                chunks: vec![
+                    crate::generated::content_manifest_payload::file_mapping::ChunkData {
+                        sha: Some(vec![0xBB; 20]),
+                        crc: Some(0x12345678),
+                        offset: Some(0),
+                        cb_original: Some(1024),
+                        cb_compressed: Some(512),
+                    },
+                ],
+                linktarget: None,
+            }],
         };
 
         let metadata = ContentManifestMetadata {

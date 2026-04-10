@@ -62,8 +62,7 @@ fn all_captures_have_valid_encrypt_request() {
             reader.len()
         );
 
-        let protocol_version =
-            u32::from_le_bytes([reader[0], reader[1], reader[2], reader[3]]);
+        let protocol_version = u32::from_le_bytes([reader[0], reader[1], reader[2], reader[3]]);
         let universe = u32::from_le_bytes([reader[4], reader[5], reader[6], reader[7]]);
 
         assert_eq!(protocol_version, 1, "{name}: protocol version");
@@ -113,23 +112,25 @@ fn all_captures_have_consistent_structure() {
 
         // Packet sequence numbers should be monotonic
         for (i, pkt) in capture.packets.iter().enumerate() {
-            assert_eq!(
-                pkt.seq, i as u32,
-                "{name}: packet {i} has wrong seq"
-            );
+            assert_eq!(pkt.seq, i as u32, "{name}: packet {i} has wrong seq");
         }
 
         // First two are unencrypted (known EMsgs), rest are encrypted (EMsgs will look like garbage)
-        assert_eq!(capture.packets[0].emsg, Some(1303), "{name}: pkt0 = EncryptRequest");
-        assert_eq!(capture.packets[1].emsg, Some(1305), "{name}: pkt1 = EncryptResult");
+        assert_eq!(
+            capture.packets[0].emsg,
+            Some(1303),
+            "{name}: pkt0 = EncryptRequest"
+        );
+        assert_eq!(
+            capture.packets[1].emsg,
+            Some(1305),
+            "{name}: pkt1 = EncryptResult"
+        );
 
         // All packets after the handshake should have non-zero payloads
         for i in 2..capture.packets.len() {
             let payload = capture.packets[i].decode_payload().unwrap();
-            assert!(
-                !payload.is_empty(),
-                "{name}: packet {i} is empty"
-            );
+            assert!(!payload.is_empty(), "{name}: packet {i} is empty");
         }
     }
 }

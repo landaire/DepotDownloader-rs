@@ -1,4 +1,5 @@
-use steam::depot::{ChunkId, DepotId};
+use steam::depot::ChunkId;
+use steam::depot::DepotId;
 
 /// Status events emitted during a depot download.
 ///
@@ -22,16 +23,10 @@ pub enum DownloadEvent {
     },
 
     /// A file download has completed (all chunks written).
-    FileCompleted {
-        depot_id: DepotId,
-        filename: String,
-    },
+    FileCompleted { depot_id: DepotId, filename: String },
 
     /// A file was skipped (e.g., directory entry, filtered out).
-    FileSkipped {
-        depot_id: DepotId,
-        filename: String,
-    },
+    FileSkipped { depot_id: DepotId, filename: String },
 
     /// An error occurred downloading a chunk (may be retried).
     ChunkFailed {

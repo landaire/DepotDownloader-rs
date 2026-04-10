@@ -35,7 +35,12 @@ impl SteamId {
         ((self.0 >> 56) & 0xF) as u8
     }
 
-    pub const fn from_parts(universe: u8, account_type: u8, instance: u32, account_id: u32) -> Self {
+    pub const fn from_parts(
+        universe: u8,
+        account_type: u8,
+        instance: u32,
+        account_id: u32,
+    ) -> Self {
         let mut id = account_id as u64;
         id |= (instance as u64 & 0xF_FFFF) << 32;
         id |= (account_type as u64 & 0xF) << 52;
@@ -62,15 +67,15 @@ impl fmt::Display for SteamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Steam3 format: [U:1:account_id]
         let letter = match self.account_type() {
-            0 => 'I', // Invalid
-            1 => 'U', // Individual
-            2 => 'M', // Multiseat
-            3 => 'G', // GameServer
-            4 => 'A', // AnonGameServer
-            5 => 'P', // Pending
-            6 => 'C', // ContentServer
-            7 => 'g', // Clan
-            8 => 'T', // Chat (clan)
+            0 => 'I',  // Invalid
+            1 => 'U',  // Individual
+            2 => 'M',  // Multiseat
+            3 => 'G',  // GameServer
+            4 => 'A',  // AnonGameServer
+            5 => 'P',  // Pending
+            6 => 'C',  // ContentServer
+            7 => 'g',  // Clan
+            8 => 'T',  // Chat (clan)
             10 => 'a', // AnonUser
             _ => '?',
         };

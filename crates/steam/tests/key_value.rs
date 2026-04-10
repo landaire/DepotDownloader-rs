@@ -1,6 +1,7 @@
 //! Snapshot tests for Valve's binary KeyValue format parser.
 
-use steam::types::key_value::{KvTag, parse_binary_kv};
+use steam::types::key_value::KvTag;
+use steam::types::key_value::parse_binary_kv;
 
 /// Build a KV with various value types for comprehensive snapshot coverage.
 fn make_all_types_kv() -> Vec<u8> {
@@ -22,7 +23,9 @@ fn make_all_types_kv() -> Vec<u8> {
 
     buf.push(KvTag::Float32 as u8);
     buf.extend_from_slice(b"score\0");
-    buf.extend_from_slice(&3.14f32.to_le_bytes());
+    #[allow(clippy::approx_constant)]
+    let score: f32 = 3.14;
+    buf.extend_from_slice(&score.to_le_bytes());
 
     buf.push(KvTag::Int64 as u8);
     buf.extend_from_slice(b"timestamp\0");
@@ -83,9 +86,14 @@ fn nested_lookup() {
     let kv = parse_binary_kv(&mut input).unwrap();
 
     // Case-insensitive lookup
-    let depots = kv.get("DEPOTS").expect("should find depots case-insensitively");
+    let depots = kv
+        .get("DEPOTS")
+        .expect("should find depots case-insensitively");
     let d441 = depots.get("441").expect("should find depot 441");
-    assert_eq!(d441.get("name").and_then(|n| n.as_str()), Some("Team Fortress 2 Content"));
+    assert_eq!(
+        d441.get("name").and_then(|n| n.as_str()),
+        Some("Team Fortress 2 Content")
+    );
 }
 
 #[test]

@@ -3,7 +3,8 @@
 //! A capture is a JSON array of packets received from the server,
 //! each with a sequence number and base64-encoded payload.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 /// A single captured incoming packet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,8 +60,7 @@ impl CaptureFile {
     }
 
     pub fn save(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
