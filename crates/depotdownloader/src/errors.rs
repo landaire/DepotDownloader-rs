@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn human_message_for_depot_access_denied() {
         let err = CliError::Steam(SteamError::Connection(ConnectionError::DepotAccessDenied {
-            depot_id: 12345,
+            depot_id: steam::depot::DepotId(12345),
             error: EResultError::AccessDenied,
         }));
         let msg = err.human_message().unwrap();

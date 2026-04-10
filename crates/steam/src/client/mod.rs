@@ -24,7 +24,10 @@ use crate::messages::header::MsgHdrProtoBuf;
 use crate::transport::Transport;
 use crate::types::SteamId;
 
-use self::msg::ClientMsg;
+use crate::client::msg::ClientMsg;
+
+/// Steam client protocol version, sent in ClientHello and ClientLogon.
+pub const PROTOCOL_VERSION: u32 = 65581;
 
 pub struct Disconnected;
 pub struct Connected;
@@ -194,8 +197,7 @@ impl SteamClient<Connected> {
 
         // Send ClientHello so the server knows we're ready for service method calls
         let hello = crate::generated::CMsgClientHello {
-            protocol_version: Some(65581),
-            ..Default::default()
+            protocol_version: Some(PROTOCOL_VERSION),
         };
         let hello_body = prost::Message::encode_to_vec(&hello);
         let msg = ClientMsg::with_body(EMsg::CLIENT_HELLO, &hello_body);
@@ -217,9 +219,12 @@ impl SteamClient<Encrypted> {
             let incoming = self.recv_msg().await?;
             if incoming.emsg == EMsg::CLIENT_LOG_ON_RESPONSE {
                 let body: crate::generated::CMsgClientLogonResponse =
-                    prost::Message::decode(&incoming.body[..]).unwrap_or_default();
-                let eresult = body.eresult.or(incoming.header.eresult).unwrap_or(0);
-                tracing::debug!("Logon response eresult: {eresult}");
+                    prost::Message::decode(&incoming.body[..])?;
+                let eresult = body.eresult.or(incoming.header.eresult);
+                tracing::debug!("Logon response eresult: {eresult:?}");
+                let eresult = eresult.ok_or(ConnectionError::LogonFailed(
+                    crate::enums::EResultError::Invalid,
+                ))?;
                 if let Err(e) = crate::enums::EResultError::from_i32(eresult) {
                     return Err(ConnectionError::LogonFailed(e).into());
                 }
@@ -558,10 +563,12 @@ fn read_u32_le(reader: &mut &[u8]) -> Result<u32, Error> {
 }
 
 fn build_encrypt_response(hdr: &MsgHdr, encrypted_key: &[u8]) -> Vec<u8> {
+    const RSA_1024_OUTPUT_SIZE: u32 = 128;
+
     let mut packet = Vec::with_capacity(MsgHdr::SIZE + 8 + encrypted_key.len() + 8);
     hdr.write_to(&mut packet).expect("Vec write never fails");
     packet.extend_from_slice(&1u32.to_le_bytes());
-    packet.extend_from_slice(&128u32.to_le_bytes());
+    packet.extend_from_slice(&RSA_1024_OUTPUT_SIZE.to_le_bytes());
     packet.extend_from_slice(encrypted_key);
     let crc = crate::util::checksum::Crc32::compute(encrypted_key);
     packet.extend_from_slice(&crc.0.to_le_bytes());

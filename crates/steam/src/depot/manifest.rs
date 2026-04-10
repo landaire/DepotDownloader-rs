@@ -353,6 +353,7 @@ impl DepotManifest {
             depot_id: metadata.depot_id.map(DepotId),
             manifest_id: metadata.gid_manifest.map(ManifestId),
             creation_time: metadata.creation_time,
+            // absent = plaintext filenames (older manifests)
             filenames_encrypted: metadata.filenames_encrypted.unwrap_or(false),
             total_uncompressed_size: metadata.cb_disk_original,
             total_compressed_size: metadata.cb_disk_compressed,

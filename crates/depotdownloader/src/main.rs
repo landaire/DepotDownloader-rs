@@ -17,6 +17,7 @@ use steam::connection::CmServer;
 use steam::connection::default_cm_servers;
 use steam::connection::fetch_cm_servers;
 use steam::depot::AppId;
+use steam::depot::BuildId;
 use steam::depot::CellId;
 use steam::depot::DepotId;
 use steam::depot::ManifestId;
@@ -54,7 +55,13 @@ fn fmt_timestamp_u64(unix: u64) -> String {
 
 #[tokio::main]
 async fn main() {
-    let opts = Options::parse();
+    let opts = match Options::parse() {
+        Ok(opts) => opts,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
 
     let filter = if opts.debug {
         "steam=debug,steam_client=debug,depotdownloader=debug"
@@ -80,7 +87,7 @@ async fn main() {
     }
 }
 
-async fn discover_servers(cell_id: u32) -> Vec<CmServer> {
+async fn discover_servers(cell_id: CellId) -> Vec<CmServer> {
     let http = reqwest::Client::new();
 
     match fetch_cm_servers(&http, cell_id).await {
@@ -106,7 +113,8 @@ async fn discover_servers(cell_id: u32) -> Vec<CmServer> {
 async fn connect_and_login(
     opts: &Options,
 ) -> Result<steam::client::SteamClient<steam::client::LoggedIn>, CliError> {
-    let cell_id = opts.cell_id.unwrap_or(0);
+    // 0 = default cell, any geographic region
+    let cell_id = CellId(opts.cell_id.unwrap_or(0));
     let servers = discover_servers(cell_id).await;
 
     if servers.is_empty() {
@@ -185,7 +193,7 @@ async fn do_login(
 
         // Log on with the access token
         let logon = steam::generated::CMsgClientLogon {
-            protocol_version: Some(65581),
+            protocol_version: Some(steam::client::PROTOCOL_VERSION),
             cell_id: Some(opts.cell_id.unwrap_or(0)),
             client_os_type: Some(steam::enums::EOSType::Windows11 as u32),
             client_language: Some("english".to_string()),
@@ -214,7 +222,7 @@ async fn do_login(
         let access_token = authenticate_qr(&client, opts).await?;
 
         let logon = steam::generated::CMsgClientLogon {
-            protocol_version: Some(65581),
+            protocol_version: Some(steam::client::PROTOCOL_VERSION),
             cell_id: Some(opts.cell_id.unwrap_or(0)),
             client_os_type: Some(steam::enums::EOSType::Windows11 as u32),
             client_language: Some("english".to_string()),
@@ -263,7 +271,7 @@ async fn authenticate_qr(
 ) -> Result<String, CliError> {
     let request = steam::generated::CAuthenticationBeginAuthSessionViaQrRequest {
         device_friendly_name: Some(opts.auth.device_name.clone()),
-        platform_type: Some(2), // Win32
+        platform_type: Some(steam::enums::EAuthTokenPlatformType::WebBrowser as i32),
         ..Default::default()
     };
 
@@ -354,11 +362,11 @@ async fn authenticate_credentials(
                 account_name: Some(username.to_string()),
                 encrypted_password: Some(encrypted_password_b64),
                 encryption_timestamp: Some(timestamp),
-                persistence: Some(1),
+                persistence: Some(steam::enums::ESessionPersistence::Persistent as i32),
                 website_id: Some("Client".to_string()),
                 device_details: Some(steam::generated::CAuthenticationDeviceDetails {
                     device_friendly_name: Some(opts.auth.device_name.clone()),
-                    platform_type: Some(1), // k_EAuthTokenPlatformType_SteamClient
+                    platform_type: Some(steam::enums::EAuthTokenPlatformType::SteamClient as i32),
                     os_type: Some(steam::enums::EOSType::Windows11 as i32),
                     ..Default::default()
                 }),
@@ -464,7 +472,7 @@ async fn run_info(opts: &Options, args: &cli::InfoArgs) -> Result<(), CliError> 
     #[derive(serde::Serialize)]
     struct BranchOverview {
         name: String,
-        build_id: Option<u32>,
+        build_id: Option<BuildId>,
         time_updated: Option<u64>,
         password_required: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -658,6 +666,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
 
         tracing::info!("Depot {depot_id} manifest {manifest_id}");
 
+        // 0 = no request code; CDN path omits the code segment
         let request_code = client
             .get_manifest_request_code(app_id, depot_id, manifest_id, Some(&args.branch), None)
             .await?
@@ -855,6 +864,7 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), CliError
         return Err("No CDN servers available".into());
     }
 
+    // 0 = no request code; CDN path omits the code segment
     let request_code = client
         .get_manifest_request_code(app_id, depot_id, manifest_id, Some(&args.branch), None)
         .await?
@@ -950,7 +960,9 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
         .ok_or("No published file details returned")?;
 
     let title = details.title.as_deref().unwrap_or("Unknown");
-    let app_id = details.consumer_appid.unwrap_or(0);
+    let app_id = details
+        .consumer_appid
+        .ok_or("Workshop item has no associated app ID")?;
     tracing::info!("Workshop item: {title} (app {app_id})");
 
     let output = args
@@ -998,6 +1010,7 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
             .get_depot_decryption_key(depot_id, AppId(app_id))
             .await?;
 
+        // 0 = no request code; CDN path omits the code segment
         let request_code = client
             .get_manifest_request_code(AppId(app_id), depot_id, manifest_id, None, None)
             .await?
@@ -1050,6 +1063,7 @@ async fn get_app_info(
     let query: Vec<steam::apps::AccessToken> = app_ids
         .iter()
         .map(|&app_id| {
+            // 0 = no access token; free apps don't require one
             let token = tokens
                 .iter()
                 .find(|t| t.app_id == app_id)
@@ -1066,7 +1080,7 @@ async fn get_app_info(
 
 fn build_logon_body(opts: &Options) -> Vec<u8> {
     let logon = steam::generated::CMsgClientLogon {
-        protocol_version: Some(65581),
+        protocol_version: Some(steam::client::PROTOCOL_VERSION),
         cell_id: Some(opts.cell_id.unwrap_or(0)),
         client_os_type: Some(steam::enums::EOSType::Windows11 as u32),
         client_language: Some("english".to_string()),
@@ -1226,7 +1240,7 @@ fn discover_depot_details(app_infos: &[steam::apps::AppInfo]) -> Vec<DepotInfo> 
 #[derive(Debug, serde::Serialize)]
 struct BranchInfo {
     name: String,
-    build_id: Option<u32>,
+    build_id: Option<BuildId>,
     time_updated: Option<u64>,
     password_required: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1273,7 +1287,7 @@ fn discover_branches(app_infos: &[steam::apps::AppInfo]) -> Vec<BranchInfo> {
 
                 branches.push(BranchInfo {
                     name: name.clone(),
-                    build_id: u32_field("buildid"),
+                    build_id: u32_field("buildid").map(BuildId),
                     time_updated: u64_field("timeupdated"),
                     password_required: str_field("pwdrequired")
                         .is_some_and(|v| v == "1" || v == "true"),
@@ -1366,7 +1380,7 @@ fn discover_manifests_for_branch(
 }
 
 /// Legacy helper: discover manifest ID for a specific depot on a branch.
-fn discover_build_id(app_infos: &[steam::apps::AppInfo], branch: &str) -> Option<u32> {
+fn discover_build_id(app_infos: &[steam::apps::AppInfo], branch: &str) -> Option<BuildId> {
     discover_branches(app_infos)
         .into_iter()
         .find(|b| b.name == branch)

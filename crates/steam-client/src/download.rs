@@ -523,13 +523,10 @@ impl DepotJob {
                 let raw = raw.unwrap();
 
                 let depot_key = job.depot_key.clone();
+                let size = expected_size.ok_or("chunk missing expected size in manifest")?;
+                let checksum = expected_checksum.ok_or("chunk missing checksum in manifest")?;
                 let decompressed = tokio::task::spawn_blocking(move || {
-                    process_chunk(
-                        &raw,
-                        &depot_key,
-                        expected_size.unwrap_or(0),
-                        expected_checksum.unwrap_or(0),
-                    )
+                    process_chunk(&raw, &depot_key, size, checksum)
                 })
                 .await??;
 

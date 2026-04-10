@@ -3,6 +3,8 @@ pub mod framing;
 
 use std::net::SocketAddr;
 
+const DEFAULT_CM_PORT: u16 = 27017;
+
 /// A Steam CM server endpoint.
 #[derive(Debug, Clone)]
 pub struct CmServer {
@@ -30,7 +32,7 @@ pub enum Protocol {
 pub static DEFAULT_CM_SERVERS: &[CmServer] = &[CmServer {
     addr: CmServerAddr::Dns {
         host: String::new(), // populated at runtime, see default_cm_servers()
-        port: 27017,
+        port: DEFAULT_CM_PORT,
     },
     protocol: Protocol::Tcp,
 }];
@@ -41,28 +43,28 @@ pub fn default_cm_servers() -> Vec<CmServer> {
         CmServer {
             addr: CmServerAddr::Dns {
                 host: "ext1-sea1.steamserver.net".into(),
-                port: 27017,
+                port: DEFAULT_CM_PORT,
             },
             protocol: Protocol::Tcp,
         },
         CmServer {
             addr: CmServerAddr::Dns {
                 host: "ext1-iad1.steamserver.net".into(),
-                port: 27017,
+                port: DEFAULT_CM_PORT,
             },
             protocol: Protocol::Tcp,
         },
         CmServer {
             addr: CmServerAddr::Dns {
                 host: "ext1-lax1.steamserver.net".into(),
-                port: 27017,
+                port: DEFAULT_CM_PORT,
             },
             protocol: Protocol::Tcp,
         },
         CmServer {
             addr: CmServerAddr::Dns {
                 host: "ext1-ord1.steamserver.net".into(),
-                port: 27017,
+                port: DEFAULT_CM_PORT,
             },
             protocol: Protocol::Tcp,
         },
@@ -74,7 +76,7 @@ pub fn default_cm_servers() -> Vec<CmServer> {
 /// Queries `https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/`
 pub async fn fetch_cm_servers(
     http: &reqwest::Client,
-    cell_id: u32,
+    cell_id: crate::depot::CellId,
 ) -> Result<Vec<CmServer>, crate::error::Error> {
     let url = format!(
         "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid={cell_id}"

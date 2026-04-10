@@ -22,6 +22,7 @@ pub fn unpack_multi(body: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
 
     let payload = match multi.message_body {
         Some(data) => {
+            // 0 means uncompressed per Steam protocol; absent field treated the same
             let size_unzipped = multi.size_unzipped.unwrap_or(0) as usize;
             if size_unzipped > 0 {
                 // Gzip-compressed

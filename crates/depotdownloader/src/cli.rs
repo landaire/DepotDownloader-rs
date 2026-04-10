@@ -356,11 +356,11 @@ pub enum Action {
 
 impl Options {
     /// Parse from the environment, choosing CLI mode based on `DD_COMPAT`.
-    pub fn parse() -> Self {
+    pub fn parse() -> Result<Self, String> {
         if std::env::var("DD_COMPAT").is_ok_and(|v| v == "1") {
             Self::from_compat(CompatCli::parse())
         } else {
-            Self::from_modern(Cli::parse())
+            Ok(Self::from_modern(Cli::parse()))
         }
     }
 
@@ -384,7 +384,7 @@ impl Options {
         }
     }
 
-    fn from_compat(cli: CompatCli) -> Self {
+    fn from_compat(cli: CompatCli) -> Result<Self, String> {
         let auth = AuthOptions {
             username: cli.username,
             password: cli.password,
@@ -393,10 +393,12 @@ impl Options {
             device_name: "depotdownloader-rs".to_string(),
         };
 
+        let app = cli.app.ok_or("error: -app not specified")?;
+
         let action = if cli.manifest_only {
             Action::Files(FilesArgs {
-                app: cli.app.unwrap_or(0),
-                depot: *cli.depot.first().unwrap_or(&0),
+                app,
+                depot: *cli.depot.first().ok_or("error: -depot not specified")?,
                 manifest: cli.manifest.first().copied(),
                 branch: cli.branch,
                 format: OutputFormat::Table,
@@ -410,7 +412,7 @@ impl Options {
             })
         } else {
             Action::Download(DownloadArgs {
-                app: cli.app.unwrap_or(0),
+                app,
                 depot: cli.depot,
                 manifest: cli.manifest,
                 branch: cli.branch,
@@ -430,7 +432,7 @@ impl Options {
             })
         };
 
-        Self {
+        Ok(Self {
             auth,
             action,
             debug: cli.debug,
@@ -439,6 +441,6 @@ impl Options {
             capture: None,
             raw_bytes: false,
             raw_errors: false,
-        }
+        })
     }
 }

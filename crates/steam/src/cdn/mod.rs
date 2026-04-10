@@ -9,7 +9,7 @@ use crate::depot::DepotId;
 use crate::depot::ManifestId;
 use crate::error::Error;
 
-use self::server::CdnServer;
+use crate::cdn::server::CdnServer;
 
 #[derive(Clone)]
 pub struct CdnClient {

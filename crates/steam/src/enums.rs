@@ -131,23 +131,27 @@ impl EResultError {
     }
 }
 
-/// Depot file flags from the manifest.
+/// Depot file flags from the manifest (bitfield).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DepotFileFlags(pub u32);
 
 impl DepotFileFlags {
-    pub const NONE: u32 = 0x00;
-    pub const DIRECTORY: u32 = 0x40;
-    pub const EXECUTABLE: u32 = 0x04;
-    pub const HIDDEN: u32 = 0x80;
-    pub const READ_ONLY: u32 = 0x100;
+    pub const NONE: Self = Self(0x00);
+    pub const EXECUTABLE: Self = Self(0x04);
+    pub const DIRECTORY: Self = Self(0x40);
+    pub const HIDDEN: Self = Self(0x80);
+    pub const READ_ONLY: Self = Self(0x100);
+
+    pub fn contains(self, flag: Self) -> bool {
+        self.0 & flag.0 != 0
+    }
 
     pub fn is_directory(self) -> bool {
-        self.0 & Self::DIRECTORY != 0
+        self.contains(Self::DIRECTORY)
     }
 
     pub fn is_executable(self) -> bool {
-        self.0 & Self::EXECUTABLE != 0
+        self.contains(Self::EXECUTABLE)
     }
 }
 
@@ -187,6 +191,24 @@ pub enum EOSType {
     WindowsUnknown = 0,
     Windows11 = 203,
     Windows10 = 202,
+}
+
+/// Auth token platform type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum EAuthTokenPlatformType {
+    Unknown = 0,
+    SteamClient = 1,
+    WebBrowser = 2,
+    MobileApp = 3,
+}
+
+/// Session persistence mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum ESessionPersistence {
+    Ephemeral = 0,
+    Persistent = 1,
 }
 
 /// Manifest section magic values.

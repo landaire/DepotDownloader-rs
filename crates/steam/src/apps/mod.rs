@@ -110,6 +110,7 @@ impl SteamClient<LoggedIn> {
             if incoming.emsg == EMsg::CLIENT_PICS_PRODUCT_INFO_RESPONSE {
                 let body = CMsgClientPicsProductInfoResponse::decode(&incoming.body[..])?;
 
+                // absent = no more responses coming
                 let pending = body.response_pending.unwrap_or(false);
 
                 for app in body.apps {
@@ -147,12 +148,12 @@ impl SteamClient<LoggedIn> {
             if incoming.emsg == EMsg::CLIENT_GET_DEPOT_DECRYPTION_KEY_RESPONSE {
                 let body = CMsgClientGetDepotDecryptionKeyResponse::decode(&incoming.body[..])?;
 
-                if let Err(e) = crate::enums::EResultError::from_i32(body.eresult.unwrap_or(0)) {
-                    return Err(ConnectionError::DepotAccessDenied {
-                        depot_id: depot_id.0,
-                        error: e,
-                    }
-                    .into());
+                let eresult = body.eresult.ok_or(ConnectionError::DepotAccessDenied {
+                    depot_id,
+                    error: crate::enums::EResultError::Invalid,
+                })?;
+                if let Err(e) = crate::enums::EResultError::from_i32(eresult) {
+                    return Err(ConnectionError::DepotAccessDenied { depot_id, error: e }.into());
                 }
 
                 let key_bytes = body.depot_encryption_key.ok_or(
@@ -198,9 +199,13 @@ impl SteamClient<LoggedIn> {
             if incoming.emsg == EMsg::CLIENT_CHECK_APP_BETA_PASSWORD_RESPONSE {
                 let body = CMsgClientCheckAppBetaPasswordResponse::decode(&incoming.body[..])?;
 
-                if let Err(e) = crate::enums::EResultError::from_i32(body.eresult.unwrap_or(0)) {
+                let eresult = body.eresult.ok_or(ConnectionError::DepotAccessDenied {
+                    depot_id: crate::depot::DepotId(app_id.0),
+                    error: crate::enums::EResultError::Invalid,
+                })?;
+                if let Err(e) = crate::enums::EResultError::from_i32(eresult) {
                     return Err(ConnectionError::DepotAccessDenied {
-                        depot_id: app_id.0,
+                        depot_id: crate::depot::DepotId(app_id.0),
                         error: e,
                     }
                     .into());

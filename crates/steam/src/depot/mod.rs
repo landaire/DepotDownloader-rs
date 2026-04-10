@@ -58,6 +58,11 @@ newtype_id!(
     CellId, u32
 );
 
+newtype_id!(
+    /// A Steam app build ID.
+    BuildId, u32
+);
+
 /// A depot content chunk identifier (SHA-1 hash).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]

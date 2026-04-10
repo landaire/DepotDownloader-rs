@@ -4,6 +4,8 @@
 
 use prost::Message;
 
+const DEFAULT_MAX_CDN_SERVERS: u32 = 20;
+
 use crate::cdn::server::CdnServer;
 use crate::client::LoggedIn;
 use crate::client::SteamClient;
@@ -36,7 +38,7 @@ impl SteamClient<LoggedIn> {
     ) -> Result<Vec<CdnServer>, Error> {
         let encoded = CContentServerDirectoryGetServersForSteamPipeRequest {
             cell_id: Some(cell_id.0),
-            max_servers: max_servers.or(Some(20)),
+            max_servers: max_servers.or(Some(DEFAULT_MAX_CDN_SERVERS)),
             ip_override: None,
             launcher_type: None,
             ipv6_public: None,

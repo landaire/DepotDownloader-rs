@@ -48,7 +48,7 @@ pub enum ConnectionError {
 
     #[error("access denied for depot {depot_id}: {error}")]
     DepotAccessDenied {
-        depot_id: u32,
+        depot_id: crate::depot::DepotId,
         error: crate::enums::EResultError,
     },
 
