@@ -69,3 +69,12 @@ As derivative work of SteamRE/DepotDownloader, this project is licensed under GP
 | Encrypted manifest detection | Shows `encryptedmanifests` entries with `encrypted: true` |
 | Checksum newtypes | `Sha1Hash`, `Adler32`, `SteamAdler32`, `Crc32` — prevents mixing |
 | Depot config persistence | Tracks installed manifest IDs for delta downloads across runs |
+
+### Some Benchmarks
+
+Benchmark | Rust | C# | Speedup |
+|---|---|---|---|
+| **List files (Spacewar)** | 1.35s | 2.46s | **1.8x** |
+| **App info (Spacewar)** | 961ms | 2.68s | **2.8x** |
+| **List files (TF2, large)** | 783ms | 2.96s | **3.8x** |
+| **Download (Spacewar)** | 845ms | 3.48s | **4.1x

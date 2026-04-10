@@ -76,6 +76,8 @@
           pkg-config
           cargo-insta
           jujutsu
+          hyperfine
+          depotdownloader
         ];
       };
     });
