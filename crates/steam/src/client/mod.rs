@@ -51,6 +51,28 @@ pub struct IncomingMsg {
     pub body: Bytes,
 }
 
+/// Response from a service method call. The eresult has already been
+/// checked - if you have this value, the call succeeded.
+#[derive(Debug)]
+pub struct ServiceResponse {
+    pub body: Bytes,
+}
+
+impl ServiceResponse {
+    /// Decode the body as a protobuf message.
+    pub fn decode<M: prost::Message + Default>(&self) -> Result<M, prost::DecodeError> {
+        M::decode(&self.body[..])
+    }
+
+    fn from_incoming(msg: IncomingMsg) -> Result<Self, Error> {
+        if let Some(eresult) = msg.header.eresult {
+            crate::enums::EResultError::from_i32(eresult)
+                .map_err(ConnectionError::ServiceMethodFailed)?;
+        }
+        Ok(Self { body: msg.body })
+    }
+}
+
 /// A Steam CM client using the typestate pattern.
 ///
 /// State transitions:
@@ -165,10 +187,21 @@ impl SteamClient<Connected> {
 
         *self.inner.cipher.lock().await = Some(SessionCipher::new(session_key));
 
-        Ok(SteamClient {
+        let encrypted_client: SteamClient<Encrypted> = SteamClient {
             inner: self.inner,
             _state: std::marker::PhantomData,
-        })
+        };
+
+        // Send ClientHello so the server knows we're ready for service method calls
+        let hello = crate::generated::CMsgClientHello {
+            protocol_version: Some(65581),
+            ..Default::default()
+        };
+        let hello_body = prost::Message::encode_to_vec(&hello);
+        let msg = ClientMsg::with_body(EMsg::CLIENT_HELLO, &hello_body);
+        encrypted_client.send_msg(&msg).await?;
+
+        Ok(encrypted_client)
     }
 }
 
@@ -186,6 +219,7 @@ impl SteamClient<Encrypted> {
                 let body: crate::generated::CMsgClientLogonResponse =
                     prost::Message::decode(&incoming.body[..]).unwrap_or_default();
                 let eresult = body.eresult.or(incoming.header.eresult).unwrap_or(0);
+                tracing::debug!("Logon response eresult: {eresult}");
                 if let Err(e) = crate::enums::EResultError::from_i32(eresult) {
                     return Err(ConnectionError::LogonFailed(e).into());
                 }
@@ -226,7 +260,7 @@ impl SteamClient<Encrypted> {
         &self,
         method_name: &str,
         body: &[u8],
-    ) -> Result<IncomingMsg, Error> {
+    ) -> Result<ServiceResponse, Error> {
         let job_id = self.inner.next_job_id.fetch_add(1, Ordering::Relaxed);
 
         let msg = ClientMsg {
@@ -249,7 +283,7 @@ impl SteamClient<Encrypted> {
             if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE
                 && incoming.header.jobid_target == Some(job_id)
             {
-                return Ok(incoming);
+                return ServiceResponse::from_incoming(incoming);
             }
 
             if self.inner.event_tx.send(incoming).is_err() {
@@ -297,7 +331,8 @@ impl SteamClient<LoggedIn> {
         &self,
         method_name: &str,
         body: &[u8],
-    ) -> Result<IncomingMsg, Error> {
+    ) -> Result<ServiceResponse, Error> {
+        tracing::debug!("Calling service method: {method_name}");
         let job_id = self.inner.next_job_id.fetch_add(1, Ordering::Relaxed);
         let steam_id = *self.inner.steam_id.lock().await;
         let session_id = *self.inner.session_id.lock().await;
@@ -325,7 +360,7 @@ impl SteamClient<LoggedIn> {
             if incoming.emsg == EMsg::SERVICE_METHOD_RESPONSE
                 && incoming.header.jobid_target == Some(job_id)
             {
-                return Ok(incoming);
+                return ServiceResponse::from_incoming(incoming);
             }
 
             // Not our response - forward to event channel

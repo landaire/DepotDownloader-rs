@@ -43,6 +43,9 @@ pub enum ConnectionError {
     #[error("logon failed: {0}")]
     LogonFailed(crate::enums::EResultError),
 
+    #[error("service method failed: {0}")]
+    ServiceMethodFailed(crate::enums::EResultError),
+
     #[error("access denied for depot {depot_id}: {error}")]
     DepotAccessDenied {
         depot_id: u32,

@@ -57,7 +57,7 @@ regex = "1"
 tokio = { version = "1", features = ["full"] }
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 # Progress
 indicatif = "0.17"
@@ -65,6 +65,9 @@ indicatif = "0.17"
 # Transport
 async-trait = "0.1"
 base64 = "0.22"
+
+# Terminal
+rpassword = "7.4"
 
 # Time
 jiff = "0.2"

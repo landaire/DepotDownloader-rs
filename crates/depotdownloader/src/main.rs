@@ -118,6 +118,7 @@ async fn connect_and_login(
         tracing::info!("Connecting to {:?}...", server.addr);
         match try_connect_login(server, opts).await {
             Ok(client) => return Ok(client),
+            Err(e) if e.is_auth_error() => return Err(e),
             Err(e) => {
                 tracing::warn!("Failed to connect to {:?}: {e}", server.addr);
                 last_err = Some(e);
@@ -194,14 +195,23 @@ async fn do_login(
             ..Default::default()
         };
         let logon_body = logon.encode_to_vec();
-        let logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+        let mut logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+
+        let user_id = steam::types::SteamId::from_parts(
+            steam::enums::EUniverse::Public as u8,
+            steam::enums::EAccountType::Individual as u8,
+            0,
+            0,
+        );
+        logon_msg.header.steamid = Some(user_id.raw());
+        logon_msg.header.client_sessionid = Some(0);
 
         let (client, _logon_resp) = client.login(logon_msg).await?;
         tracing::info!("Logged in successfully as {username}");
         Ok(client)
     } else if opts.auth.qr {
         tracing::info!("Starting QR code login...");
-        let access_token = authenticate_qr(&client).await?;
+        let access_token = authenticate_qr(&client, opts).await?;
 
         let logon = steam::generated::CMsgClientLogon {
             protocol_version: Some(65581),
@@ -212,7 +222,16 @@ async fn do_login(
             ..Default::default()
         };
         let logon_body = logon.encode_to_vec();
-        let logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+        let mut logon_msg = ClientMsg::with_body(EMsg::CLIENT_LOGON, &logon_body);
+
+        let user_id = steam::types::SteamId::from_parts(
+            steam::enums::EUniverse::Public as u8,
+            steam::enums::EAccountType::Individual as u8,
+            0,
+            0,
+        );
+        logon_msg.header.steamid = Some(user_id.raw());
+        logon_msg.header.client_sessionid = Some(0);
 
         let (client, _logon_resp) = client.login(logon_msg).await?;
         tracing::info!("Logged in successfully via QR code");
@@ -240,9 +259,10 @@ async fn do_login(
 /// QR code authentication (pre-logon, on Encrypted state).
 async fn authenticate_qr(
     client: &steam::client::SteamClient<steam::client::Encrypted>,
+    opts: &Options,
 ) -> Result<String, CliError> {
     let request = steam::generated::CAuthenticationBeginAuthSessionViaQrRequest {
-        device_friendly_name: Some("depotdownloader-rs".to_string()),
+        device_friendly_name: Some(opts.auth.device_name.clone()),
         platform_type: Some(2), // Win32
         ..Default::default()
     };
@@ -292,54 +312,77 @@ async fn authenticate_credentials(
     opts: &Options,
 ) -> Result<String, CliError> {
     use rsa::BigUint;
-    use rsa::Oaep;
+    use rsa::Pkcs1v15Encrypt;
     use rsa::RsaPublicKey;
-    use sha1::Sha1;
 
-    // Get the password, prompting if not provided
-    let password = match &opts.auth.password {
-        Some(p) => p.clone(),
-        None => {
-            eprint!("Password for {username}: ");
-            let mut pw = String::new();
-            std::io::stdin().read_line(&mut pw)?;
-            pw.trim().to_string()
+    const MAX_PASSWORD_ATTEMPTS: u32 = 3;
+    let mut attempts = 0;
+
+    let session = loop {
+        attempts += 1;
+
+        let password = match &opts.auth.password {
+            Some(p) if attempts == 1 => p.clone(),
+            _ => {
+                eprint!("Password for {username}: ");
+                rpassword::read_password()
+                    .map_err(|e| CliError::Other(format!("failed to read password: {e}")))?
+            }
+        };
+
+        tracing::debug!("Password length: {} bytes", password.len());
+
+        let rsa_response = client.get_password_rsa_public_key(username).await?;
+        let modulus = rsa_response.publickey_mod.ok_or("missing RSA modulus")?;
+        let exponent = rsa_response.publickey_exp.ok_or("missing RSA exponent")?;
+        let timestamp = rsa_response.timestamp.ok_or("missing RSA timestamp")?;
+
+        let n =
+            BigUint::parse_bytes(modulus.as_bytes(), 16).ok_or("invalid RSA modulus hex")?;
+        let e =
+            BigUint::parse_bytes(exponent.as_bytes(), 16).ok_or("invalid RSA exponent hex")?;
+        let public_key =
+            RsaPublicKey::new(n, e).map_err(|e| format!("invalid RSA key: {e}"))?;
+
+        let mut rng = rsa::rand_core::OsRng;
+        let encrypted_password = public_key
+            .encrypt(&mut rng, Pkcs1v15Encrypt, password.as_bytes())
+            .map_err(|e| format!("RSA encryption failed: {e}"))?;
+
+        let encrypted_password_b64 =
+            base64::engine::general_purpose::STANDARD.encode(&encrypted_password);
+
+        let begin_request =
+            steam::generated::CAuthenticationBeginAuthSessionViaCredentialsRequest {
+                account_name: Some(username.to_string()),
+                encrypted_password: Some(encrypted_password_b64),
+                encryption_timestamp: Some(timestamp),
+                persistence: Some(1),
+                website_id: Some("Client".to_string()),
+                device_details: Some(steam::generated::CAuthenticationDeviceDetails {
+                    device_friendly_name: Some(opts.auth.device_name.clone()),
+                    platform_type: Some(1), // k_EAuthTokenPlatformType_SteamClient
+                    os_type: Some(steam::enums::EOSType::Windows11 as i32),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+        match client
+            .begin_auth_session_via_credentials(begin_request)
+            .await
+        {
+            Ok(session) => break session,
+            Err(steam::error::Error::Connection(
+                steam::error::ConnectionError::ServiceMethodFailed(
+                    steam::enums::EResultError::InvalidPassword,
+                ),
+            )) if attempts < MAX_PASSWORD_ATTEMPTS => {
+                eprintln!("Invalid password. Please try again ({attempts}/{MAX_PASSWORD_ATTEMPTS}).");
+            }
+            Err(e) => return Err(e.into()),
         }
     };
-
-    // Step 1: Get RSA public key for password encryption
-    let rsa_response = client.get_password_rsa_public_key(username).await?;
-    let modulus = rsa_response.publickey_mod.ok_or("missing RSA modulus")?;
-    let exponent = rsa_response.publickey_exp.ok_or("missing RSA exponent")?;
-    let timestamp = rsa_response.timestamp.ok_or("missing RSA timestamp")?;
-
-    // Step 2: RSA-encrypt the password
-    let n = BigUint::parse_bytes(modulus.as_bytes(), 16).ok_or("invalid RSA modulus hex")?;
-    let e = BigUint::parse_bytes(exponent.as_bytes(), 16).ok_or("invalid RSA exponent hex")?;
-    let public_key = RsaPublicKey::new(n, e).map_err(|e| format!("invalid RSA key: {e}"))?;
-
-    let padding = Oaep::new::<Sha1>();
-    let mut rng = rsa::rand_core::OsRng;
-    let encrypted_password = public_key
-        .encrypt(&mut rng, padding, password.as_bytes())
-        .map_err(|e| format!("RSA encryption failed: {e}"))?;
-
-    let encrypted_password_b64 =
-        base64::engine::general_purpose::STANDARD.encode(&encrypted_password);
-
-    // Step 3: Begin auth session
-    let begin_request = steam::generated::CAuthenticationBeginAuthSessionViaCredentialsRequest {
-        account_name: Some(username.to_string()),
-        encrypted_password: Some(encrypted_password_b64),
-        encryption_timestamp: Some(timestamp),
-        persistence: Some(1), // Persistent
-        website_id: Some("Client".to_string()),
-        ..Default::default()
-    };
-
-    let session = client
-        .begin_auth_session_via_credentials(begin_request)
-        .await?;
 
     let client_id = session
         .client_id
@@ -616,9 +659,16 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
             .await?
             .unwrap_or(0);
 
-        let cdn_auth = client
+        let cdn_token = match client
             .get_cdn_auth_token(app_id, depot_id, &cdn_servers[0].host)
-            .await?;
+            .await
+        {
+            Ok(auth) => auth.token,
+            Err(e) => {
+                tracing::debug!("CDN auth token not available: {e}");
+                None
+            }
+        };
 
         // Try cached manifest first
         let cache = steam_client::manifest::ManifestCache::default_for(&base_dir);
@@ -631,7 +681,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
                     depot_id,
                     manifest_id,
                     request_code,
-                    cdn_auth.token.as_deref(),
+                    cdn_token.as_deref(),
                 )
                 .await?;
 
@@ -692,7 +742,7 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
         }
 
         let job = steam_client::download::DepotJob::builder()
-            .cdn(cdn.clone(), cdn_servers[0].clone(), cdn_auth.token)
+            .cdn(cdn.clone(), cdn_servers[0].clone(), cdn_token.clone())
             .depot_id(depot_id)
             .depot_key(depot_key)
             .install_dir(if custom_output {
@@ -799,19 +849,9 @@ async fn run_files(opts: &Options, args: &cli::FilesArgs) -> Result<(), CliError
         .await?
         .unwrap_or(0);
 
-    let cdn_auth = client
-        .get_cdn_auth_token(app_id, depot_id, &cdn_servers[0].host)
-        .await?;
-
     let cdn = steam::cdn::CdnClient::new()?;
     let manifest_bytes = cdn
-        .download_manifest(
-            &cdn_servers[0],
-            depot_id,
-            manifest_id,
-            request_code,
-            cdn_auth.token.as_deref(),
-        )
+        .download_manifest(&cdn_servers[0], depot_id, manifest_id, request_code, None)
         .await?;
 
     let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;
@@ -945,10 +985,6 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
             .await?
             .unwrap_or(0);
 
-        let cdn_auth = client
-            .get_cdn_auth_token(AppId(app_id), depot_id, &cdn_servers[0].host)
-            .await?;
-
         let cdn = steam::cdn::CdnClient::new()?;
         let manifest_bytes = cdn
             .download_manifest(
@@ -956,7 +992,7 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
                 depot_id,
                 manifest_id,
                 request_code,
-                cdn_auth.token.as_deref(),
+                None,
             )
             .await?;
 
@@ -971,7 +1007,7 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
         let progress_handle = download::spawn_progress_renderer(event_rx);
 
         let job = steam_client::download::DepotJob::builder()
-            .cdn(cdn, cdn_servers[0].clone(), cdn_auth.token)
+            .cdn(cdn, cdn_servers[0].clone(), None)
             .depot_id(depot_id)
             .depot_key(depot_key)
             .install_dir(output)

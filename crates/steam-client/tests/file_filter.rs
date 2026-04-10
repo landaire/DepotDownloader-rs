@@ -58,3 +58,33 @@ fn empty_filelist_matches_nothing() {
     let filter = FileFilter::FileList(vec![]);
     assert!(!filter.matches("anything.txt"));
 }
+
+#[test]
+fn filelist_with_regex_prefix() {
+    let dir = std::env::temp_dir().join("dd_test_filelist_regex");
+    std::fs::create_dir_all(&dir).ok();
+    let path = dir.join("mixed.txt");
+    std::fs::write(&path, "bin/specific.exe\nregex:\\.dll$\n").unwrap();
+
+    let filter = FileFilter::from_filelist(&path).unwrap();
+    assert!(filter.matches("bin/specific.exe"));
+    assert!(filter.matches("lib/something.dll"));
+    assert!(filter.matches("OTHER.DLL"));
+    assert!(!filter.matches("readme.txt"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn filelist_regex_only() {
+    let dir = std::env::temp_dir().join("dd_test_filelist_regex_only");
+    std::fs::create_dir_all(&dir).ok();
+    let path = dir.join("patterns.txt");
+    std::fs::write(&path, "regex:\\.cfg$\n").unwrap();
+
+    let filter = FileFilter::from_filelist(&path).unwrap();
+    assert!(filter.matches("config.cfg"));
+    assert!(!filter.matches("config.txt"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}

@@ -102,19 +102,42 @@ pub enum FileFilter {
     FileList(Vec<String>),
     /// Regex pattern (case-insensitive).
     Regex(regex::Regex),
+    /// Mixed: literal filenames and regex patterns (from a filelist file
+    /// where lines prefixed with `regex:` are treated as patterns).
+    Mixed {
+        literals: Vec<String>,
+        patterns: Vec<regex::Regex>,
+    },
 }
 
 impl FileFilter {
-    /// Load a file list from a text file (one filename per line).
+    /// Load a file list from a text file. Lines prefixed with `regex:` are
+    /// compiled as case-insensitive regex patterns; all other lines are
+    /// treated as literal filenames.
     pub fn from_filelist(path: &std::path::Path) -> Result<Self, std::io::Error> {
         let content = std::fs::read_to_string(path)?;
-        let files: Vec<String> = content
-            .lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty())
-            .map(|l| l.replace('\\', "/"))
-            .collect();
-        Ok(Self::FileList(files))
+        let mut literals = Vec::new();
+        let mut patterns = Vec::new();
+
+        for line in content.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
+            if let Some(pattern) = line.strip_prefix("regex:") {
+                let re = regex::RegexBuilder::new(pattern)
+                    .case_insensitive(true)
+                    .build()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                patterns.push(re);
+            } else {
+                literals.push(line.replace('\\', "/"));
+            }
+        }
+
+        if patterns.is_empty() {
+            Ok(Self::FileList(literals))
+        } else if literals.is_empty() && patterns.len() == 1 {
+            Ok(Self::Regex(patterns.into_iter().next().unwrap()))
+        } else {
+            Ok(Self::Mixed { literals, patterns })
+        }
     }
 
     /// Create from a regex pattern string.
@@ -130,6 +153,10 @@ impl FileFilter {
         match self {
             Self::FileList(list) => list.iter().any(|f| f.eq_ignore_ascii_case(&normalized)),
             Self::Regex(re) => re.is_match(&normalized),
+            Self::Mixed { literals, patterns } => {
+                literals.iter().any(|f| f.eq_ignore_ascii_case(&normalized))
+                    || patterns.iter().any(|re| re.is_match(&normalized))
+            }
         }
     }
 }

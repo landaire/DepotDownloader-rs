@@ -54,6 +54,10 @@ pub struct AuthOptions {
     /// Remember login credentials for future sessions.
     #[arg(long)]
     pub remember_password: bool,
+
+    /// Device name sent to Steam during authentication.
+    #[arg(long, env = "DD_DEVICE_NAME", default_value = "depotdownloader-rs")]
+    pub device_name: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -384,6 +388,7 @@ impl Options {
             password: cli.password,
             qr: cli.qr,
             remember_password: cli.remember_password,
+            device_name: "depotdownloader-rs".to_string(),
         };
 
         let action = if cli.manifest_only {

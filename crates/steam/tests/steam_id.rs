@@ -1,5 +1,6 @@
 //! SteamID tests ported from SteamKit2's SteamIDFacts.cs.
 
+use steam::enums::{EAccountType, EUniverse};
 use steam::types::SteamId;
 
 #[test]
@@ -44,4 +45,50 @@ fn display_steam3_individual() {
 fn display_steam3_clan() {
     let sid = SteamId::from_parts(1, 7, 0, 2772668);
     assert_eq!(sid.to_string(), "[g:1:2772668]");
+}
+
+#[test]
+fn credential_login_steamid() {
+    let sid = SteamId::from_parts(
+        EUniverse::Public as u8,
+        EAccountType::Individual as u8,
+        0,
+        0,
+    );
+    assert_eq!(sid.universe(), EUniverse::Public as u8);
+    assert_eq!(sid.account_type(), EAccountType::Individual as u8);
+    assert_eq!(sid.account_id(), 0);
+    assert_eq!(sid.instance(), 0);
+}
+
+#[test]
+fn anonymous_login_steamid() {
+    let sid = SteamId::from_parts(
+        EUniverse::Public as u8,
+        EAccountType::AnonUser as u8,
+        0,
+        0,
+    );
+    assert_eq!(sid.universe(), EUniverse::Public as u8);
+    assert_eq!(sid.account_type(), EAccountType::AnonUser as u8);
+    assert_eq!(sid.account_id(), 0);
+    assert_eq!(sid.instance(), 0);
+}
+
+#[test]
+fn credential_and_anon_steamids_differ() {
+    let cred = SteamId::from_parts(
+        EUniverse::Public as u8,
+        EAccountType::Individual as u8,
+        0,
+        0,
+    );
+    let anon = SteamId::from_parts(
+        EUniverse::Public as u8,
+        EAccountType::AnonUser as u8,
+        0,
+        0,
+    );
+    assert_ne!(cred.raw(), anon.raw());
+    assert_ne!(cred.account_type(), anon.account_type());
 }
