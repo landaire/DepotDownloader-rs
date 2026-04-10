@@ -1,10 +1,10 @@
 use aes::Aes256;
-use aes::cipher::BlockDecrypt;
-use aes::cipher::BlockEncrypt;
+use aes::cipher::BlockCipherDecrypt;
+use aes::cipher::BlockCipherEncrypt;
 use aes::cipher::KeyInit;
 use aes::cipher::block_padding::Pkcs7;
-use cbc::cipher::BlockDecryptMut;
-use cbc::cipher::BlockEncryptMut;
+use cbc::cipher::BlockModeDecrypt;
+use cbc::cipher::BlockModeEncrypt;
 use cbc::cipher::KeyIvInit;
 use hmac::Hmac;
 use hmac::Mac;
@@ -61,17 +61,12 @@ impl SessionCipher {
         let encrypted_iv: [u8; AES_BLOCK_SIZE] = iv_block.into();
 
         // CBC-encrypt the plaintext
-        let padded_len = ((plaintext.len() + AES_BLOCK_SIZE) / AES_BLOCK_SIZE) * AES_BLOCK_SIZE;
-        let mut ciphertext = vec![0u8; padded_len];
-        ciphertext[..plaintext.len()].copy_from_slice(plaintext);
-
         let encrypted = cbc::Encryptor::<Aes256>::new((&self.aes_key).into(), (&iv).into())
-            .encrypt_padded_mut::<Pkcs7>(&mut ciphertext, plaintext.len())
-            .expect("buffer is large enough for PKCS7 padding");
+            .encrypt_padded_vec::<Pkcs7>(plaintext);
 
         let mut output = Vec::with_capacity(AES_BLOCK_SIZE + encrypted.len());
         output.extend_from_slice(&encrypted_iv);
-        output.extend_from_slice(encrypted);
+        output.extend_from_slice(&encrypted);
         output
     }
 
@@ -89,25 +84,24 @@ impl SessionCipher {
         let iv: [u8; AES_BLOCK_SIZE] = iv_block.into();
 
         // CBC-decrypt the payload
-        let mut ciphertext = data[AES_BLOCK_SIZE..].to_vec();
         let plaintext = cbc::Decryptor::<Aes256>::new((&self.aes_key).into(), (&iv).into())
-            .decrypt_padded_mut::<Pkcs7>(&mut ciphertext)
+            .decrypt_padded_vec::<Pkcs7>(&data[AES_BLOCK_SIZE..])
             .map_err(|_| CryptoError::InvalidPadding)?;
 
         // Validate HMAC
         let random = &iv[HMAC_IV_BYTES..AES_BLOCK_SIZE];
-        let expected_iv = self.build_iv(random, plaintext);
+        let expected_iv = self.build_iv(random, &plaintext);
         if expected_iv[..HMAC_IV_BYTES] != iv[..HMAC_IV_BYTES] {
             return Err(CryptoError::DecryptionFailed);
         }
 
-        Ok(plaintext.to_vec())
+        Ok(plaintext)
     }
 
     /// Build the IV: HMAC-SHA1(random || plaintext)[0..13] || random
     fn build_iv(&self, random: &[u8], plaintext: &[u8]) -> [u8; AES_BLOCK_SIZE] {
         let mut mac =
-            <HmacSha1 as Mac>::new_from_slice(&self.hmac_key).expect("HMAC accepts any key length");
+            HmacSha1::new_from_slice(&self.hmac_key).expect("HMAC accepts any key length");
         mac.update(random);
         mac.update(plaintext);
         let hmac_result = mac.finalize().into_bytes();

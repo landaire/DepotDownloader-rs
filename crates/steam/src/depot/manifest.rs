@@ -378,10 +378,10 @@ fn try_sha_array(bytes: &[u8]) -> Option<[u8; 20]> {
 /// 5. Normalize path separators to OS convention
 fn decrypt_filename(encrypted_b64: &str, key: &DepotKey) -> Result<String, ManifestError> {
     use aes::Aes256;
-    use aes::cipher::BlockDecrypt;
+    use aes::cipher::BlockCipherDecrypt;
     use aes::cipher::KeyInit;
     use aes::cipher::block_padding::Pkcs7;
-    use cbc::cipher::BlockDecryptMut;
+    use cbc::cipher::BlockModeDecrypt;
     use cbc::cipher::KeyIvInit;
 
     // Strip all whitespace - encrypted filenames may contain line breaks
@@ -407,9 +407,8 @@ fn decrypt_filename(encrypted_b64: &str, key: &DepotKey) -> Result<String, Manif
     let iv: [u8; 16] = iv_block.into();
 
     // CBC-decrypt the rest
-    let mut ciphertext = encrypted[16..].to_vec();
     let plaintext = cbc::Decryptor::<Aes256>::new((&key.0).into(), (&iv).into())
-        .decrypt_padded_mut::<Pkcs7>(&mut ciphertext)
+        .decrypt_padded_vec::<Pkcs7>(&encrypted[16..])
         .map_err(|_| ManifestError::MissingSection("filename decryption failed"))?;
 
     // Strip trailing null bytes

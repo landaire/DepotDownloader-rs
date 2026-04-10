@@ -23,6 +23,7 @@ sha1.workspace = true
 crc32fast.workspace = true
 adler.workspace = true
 getrandom.workspace = true
+rand.workspace = true
 winnow.workspace = true
 bytes.workspace = true
 byteorder.workspace = true
@@ -40,5 +41,5 @@ base64.workspace = true
 insta.workspace = true
 
 [build-dependencies]
-prost-build = "0.13"
-protox = "0.7"
+prost-build = "0.14"
+protox = "0.9"

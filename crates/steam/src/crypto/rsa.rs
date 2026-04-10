@@ -29,8 +29,8 @@ pub fn encrypt_with_steam_public_key(data: &[u8]) -> Result<Vec<u8>, CryptoError
     let public_key = RsaPublicKey::from_public_key_der(STEAM_PUBLIC_KEY_DER)
         .map_err(|e| CryptoError::Rsa(rsa::Error::Pkcs8(e.into())))?;
 
-    let padding = Oaep::new::<Sha1>();
-    let mut rng = rsa::rand_core::OsRng;
+    let padding = Oaep::<Sha1>::new();
+    let mut rng = rand::rng();
     let encrypted = public_key
         .encrypt(&mut rng, padding, data)
         .map_err(CryptoError::Rsa)?;

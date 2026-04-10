@@ -1,11 +1,11 @@
 pub mod rsa;
 
 use aes::Aes256;
-use aes::cipher::BlockDecrypt;
+use aes::cipher::BlockCipherDecrypt;
 use aes::cipher::KeyInit;
 use aes::cipher::block_padding::Pkcs7;
-use cbc::cipher::BlockDecryptMut;
-use cbc::cipher::BlockEncryptMut;
+use cbc::cipher::BlockModeDecrypt;
+use cbc::cipher::BlockModeEncrypt;
 use cbc::cipher::KeyIvInit;
 
 use crate::error::CryptoError;
@@ -28,25 +28,15 @@ pub fn symmetric_decrypt_ecb(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, Cry
     let iv: [u8; 16] = iv_block.into();
 
     // Decrypt payload with CBC
-    let mut ciphertext = data[16..].to_vec();
-    let plaintext = cbc::Decryptor::<Aes256>::new(key.into(), (&iv).into())
-        .decrypt_padded_mut::<Pkcs7>(&mut ciphertext)
-        .map_err(|_| CryptoError::InvalidPadding)?;
-
-    Ok(plaintext.to_vec())
+    cbc::Decryptor::<Aes256>::new(key.into(), (&iv).into())
+        .decrypt_padded_vec::<Pkcs7>(&data[16..])
+        .map_err(|_| CryptoError::InvalidPadding)
 }
 
 /// AES-256-CBC encrypt with a given IV.
 pub fn symmetric_encrypt_cbc(key: &[u8; 32], iv: &[u8; 16], plaintext: &[u8]) -> Vec<u8> {
-    let padded_len = ((plaintext.len() + 16) / 16) * 16;
-    let mut buf = vec![0u8; padded_len];
-    buf[..plaintext.len()].copy_from_slice(plaintext);
-
-    let encrypted = cbc::Encryptor::<Aes256>::new(key.into(), iv.into())
-        .encrypt_padded_mut::<Pkcs7>(&mut buf, plaintext.len())
-        .expect("buffer is large enough");
-
-    encrypted.to_vec()
+    cbc::Encryptor::<Aes256>::new(key.into(), iv.into())
+        .encrypt_padded_vec::<Pkcs7>(plaintext)
 }
 
 /// AES-256-CBC decrypt with a given IV.
@@ -55,11 +45,9 @@ pub fn symmetric_decrypt_cbc(
     iv: &[u8; 16],
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    let mut buf = ciphertext.to_vec();
-    let plaintext = cbc::Decryptor::<Aes256>::new(key.into(), iv.into())
-        .decrypt_padded_mut::<Pkcs7>(&mut buf)
-        .map_err(|_| CryptoError::InvalidPadding)?;
-    Ok(plaintext.to_vec())
+    cbc::Decryptor::<Aes256>::new(key.into(), iv.into())
+        .decrypt_padded_vec::<Pkcs7>(ciphertext)
+        .map_err(|_| CryptoError::InvalidPadding)
 }
 
 #[cfg(test)]

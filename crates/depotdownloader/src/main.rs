@@ -319,7 +319,7 @@ async fn authenticate_credentials(
     username: &str,
     opts: &Options,
 ) -> Result<String, CliError> {
-    use rsa::BigUint;
+    use rsa::BoxedUint;
     use rsa::Pkcs1v15Encrypt;
     use rsa::RsaPublicKey;
 
@@ -345,11 +345,17 @@ async fn authenticate_credentials(
         let exponent = rsa_response.publickey_exp.ok_or("missing RSA exponent")?;
         let timestamp = rsa_response.timestamp.ok_or("missing RSA timestamp")?;
 
-        let n = BigUint::parse_bytes(modulus.as_bytes(), 16).ok_or("invalid RSA modulus hex")?;
-        let e = BigUint::parse_bytes(exponent.as_bytes(), 16).ok_or("invalid RSA exponent hex")?;
+        let n_bits = (modulus.len() as u32) * 4;
+        let n: BoxedUint = BoxedUint::from_be_hex(&modulus, n_bits)
+            .into_option()
+            .ok_or("invalid RSA modulus hex")?;
+        let e_bits = (exponent.len() as u32) * 4;
+        let e: BoxedUint = BoxedUint::from_be_hex(&exponent, e_bits)
+            .into_option()
+            .ok_or("invalid RSA exponent hex")?;
         let public_key = RsaPublicKey::new(n, e).map_err(|e| format!("invalid RSA key: {e}"))?;
 
-        let mut rng = rsa::rand_core::OsRng;
+        let mut rng = rand::rng();
         let encrypted_password = public_key
             .encrypt(&mut rng, Pkcs1v15Encrypt, password.as_bytes())
             .map_err(|e| format!("RSA encryption failed: {e}"))?;
