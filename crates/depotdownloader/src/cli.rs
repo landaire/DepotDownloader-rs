@@ -3,8 +3,11 @@ use clap::Subcommand;
 use clap::ValueEnum;
 
 /// Steam depot content downloader.
+///
+/// Set DD_COMPAT=1 to use the legacy flat-arg CLI compatible with the original
+/// DepotDownloader (e.g. ddl -app 480 -depot 481 -manifest-only).
 #[derive(Debug, Parser)]
-#[command(name = "ddl", version, about)]
+#[command(name = "ddl", version, about, after_help = "Set DD_COMPAT=1 for legacy DepotDownloader-compatible CLI syntax.")]
 pub struct Cli {
     #[command(flatten)]
     pub auth: AuthOptions,
