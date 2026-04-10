@@ -61,7 +61,7 @@ mkdir -p "$RUST_DL" "$CS_DL"
 hyperfine \
   --warmup 0 \
   --min-runs 3 \
-  --prepare "rm -rf $RUST_DL/* $CS_DL/*" \
+  --prepare "rm -rf $RUST_DL $CS_DL && mkdir -p $RUST_DL $CS_DL" \
   --export-markdown "$RESULTS/bench_5_download_1_8mb.md" \
   -n "Rust"  "$DD_RS download --app 480 --depot 481 --output $RUST_DL > /dev/null 2>&1" \
   -n "C#"    "$DD_CS -app 480 -depot 481 -dir $CS_DL > /dev/null 2>&1"
@@ -78,7 +78,7 @@ mkdir -p "$RUST_DL" "$CS_DL"
 hyperfine \
   --warmup 0 \
   --min-runs 2 \
-  --prepare "rm -rf $RUST_DL/* $CS_DL/*" \
+  --prepare "rm -rf $RUST_DL $CS_DL && mkdir -p $RUST_DL $CS_DL" \
   --export-markdown "$RESULTS/bench_6_download_2_1gb.md" \
   -n "Rust"  "$DD_RS download --app 730 --depot 2347770 --filelist $FILELIST --output $RUST_DL > /dev/null 2>&1" \
   -n "C#"    "$DD_CS -app 730 -depot 2347770 -filelist $FILELIST -dir $CS_DL > /dev/null 2>&1"

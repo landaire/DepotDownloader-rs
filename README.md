@@ -130,9 +130,9 @@ See [crates/steam-ffi/README.md](crates/steam-ffi/README.md) for full details.
 
 | Benchmark | Rust | C# | Speedup |
 |---|---|---|---|
-| **List files: Spacewar** (8 files, 1.8 MiB) | 982ms | 1.15s | **1.2x** |
-| **App info: Spacewar** | 427ms | 2.88s | **6.8x** |
-| **List files: TF2** (1189 files, 29.4 GiB) | 912ms | 2.99s | **3.3x** |
-| **List files: CS2** (2841 files, 50.4 GiB) | 814ms | 4.21s | **5.2x** |
-| **Download: Spacewar** (1.8 MiB) | 1.08s | 3.52s | **3.3x** |
-| **Download: CS2 3 maps** (2.1 GiB) | 5.12s | 9.48s | **1.9x** |
+| **List files: Spacewar** (8 files, 1.8 MiB) | 818ms | 3.22s | **3.9x** |
+| **App info: Spacewar** | 929ms | 2.65s | **2.9x** |
+| **List files: TF2** (1189 files, 29.4 GiB) | 835ms | 3.14s | **3.8x** |
+| **List files: CS2** (2841 files, 50.4 GiB) | 846ms | 3.37s | **4.0x** |
+| **Download: Spacewar** (1.8 MiB) | 1.00s | 3.48s | **3.5x** |
+| **Download: CS2 3 maps** (2.1 GiB) | 7.35s | 10.61s | **1.4x** |
