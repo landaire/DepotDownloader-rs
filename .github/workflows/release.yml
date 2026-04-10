@@ -55,30 +55,30 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            bin: depotdownloader
+            bin: ddl
           - os: macos-latest
             target: aarch64-apple-darwin
-            bin: depotdownloader
+            bin: ddl
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            bin: depotdownloader.exe
+            bin: ddl.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release -p depotdownloader
+      - run: cargo build --release -p ddl
 
       - name: Package
         shell: bash
         run: |
           mkdir dist
           cp target/release/${{ matrix.bin }} dist/
-          cd dist && tar czf ../depotdownloader-${{ matrix.target }}.tar.gz *
+          cd dist && tar czf ../ddl-${{ matrix.target }}.tar.gz *
 
       - uses: actions/upload-artifact@v4
         with:
-          name: depotdownloader-${{ matrix.target }}
-          path: depotdownloader-${{ matrix.target }}.tar.gz
+          name: ddl-${{ matrix.target }}
+          path: ddl-${{ matrix.target }}.tar.gz
 
   build-wheels:
     strategy:

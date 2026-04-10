@@ -4,7 +4,7 @@ use clap::ValueEnum;
 
 /// Steam depot content downloader.
 #[derive(Debug, Parser)]
-#[command(name = "depotdownloader", version, about)]
+#[command(name = "ddl", version, about)]
 pub struct Cli {
     #[command(flatten)]
     pub auth: AuthOptions,
@@ -242,7 +242,7 @@ pub struct WorkshopArgs {
 /// Activated by setting the `DD_COMPAT=1` environment variable.
 #[derive(Debug, Parser)]
 #[command(
-    name = "depotdownloader",
+    name = "ddl",
     version,
     about = "Steam depot content downloader (compat mode)"
 )]

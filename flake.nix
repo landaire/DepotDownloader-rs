@@ -60,14 +60,14 @@
       cargoArtifacts = craneLib.buildDepsOnly commonArgs;
     in {
       packages = {
-        depotdownloader = craneLib.buildPackage (commonArgs
+        ddl = craneLib.buildPackage (commonArgs
           // {
             inherit cargoArtifacts;
-            cargoExtraArgs = "-p depotdownloader";
-            meta.mainProgram = "depotdownloader";
+            cargoExtraArgs = "-p ddl";
+            meta.mainProgram = "ddl";
           });
 
-        default = self.packages.${system}.depotdownloader;
+        default = self.packages.${system}.ddl;
       };
 
       devShells.default = pkgs.mkShell {

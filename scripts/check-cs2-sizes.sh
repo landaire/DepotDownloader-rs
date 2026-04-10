@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DD_RS="./target/release/depotdownloader"
+DD_RS="./target/release/ddl"
 
 echo "CS2 depot 2347770 file size distribution:"
 echo ""

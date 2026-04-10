@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DD_RS="./target/release/depotdownloader"
+DD_RS="./target/release/ddl"
 DD_CS="DepotDownloader"
 BENCH_DIR="/mnt/g/dev/depotdownloader-rs/.bench"
 mkdir -p "$BENCH_DIR"

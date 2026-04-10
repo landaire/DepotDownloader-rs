@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DD_RS="./target/release/depotdownloader"
+DD_RS="./target/release/ddl"
 
 echo "Files matching maps/de_dust2:"
 $DD_RS files --app 730 --depot 2347770 --bytes 2>/dev/null | tail -n +8 | grep 'maps/de_dust2'

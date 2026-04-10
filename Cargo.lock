@@ -461,7 +461,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "depotdownloader"
+name = "ddl"
 version = "0.1.0"
 dependencies = [
  "base64",

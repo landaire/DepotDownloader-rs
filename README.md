@@ -11,7 +11,7 @@ See [FEATURES.md](FEATURES.md) for feature parity status and new features.
 Browse app info (branches, depots, manifests):
 
 ```
-$ depotdownloader info --app 480
+$ ddl info --app 480
 App 480
 
 Branches:
@@ -32,7 +32,7 @@ Manifests for branch 'public':
 List files in a depot:
 
 ```
-$ depotdownloader files --app 480 --depot 481
+$ ddl files --app 480 --depot 481
 Depot:    481
 Manifest: 3183503801510301321
 Created:  2019-02-06 21:51:33 UTC
@@ -53,7 +53,7 @@ steam_api.dll                                                  219.78 KiB       
 Plain output for piping:
 
 ```
-$ depotdownloader files --app 480 --depot 481 --format plain
+$ ddl files --app 480 --depot 481 --format plain
 D3D9VRDistort.cso
 DejaVuSans.ttf
 DejaVuSans.txt
@@ -67,7 +67,7 @@ steam_api.dll
 Download depot content:
 
 ```
-$ depotdownloader download --app 480 --depot 481 --output ./spacewar
+$ ddl download --app 480 --depot 481 --output ./spacewar
 
 $ ls -la spacewar/
      576 D3D9VRDistort.cso
@@ -83,7 +83,7 @@ $ ls -la spacewar/
 Authenticated login (for paid games):
 
 ```
-$ depotdownloader download --app 552990 --depot 552993 --username myuser --remember-password --output ./grow
+$ ddl download --app 552990 --depot 552993 --username myuser --remember-password --output ./grow
 Password for myuser:
 Confirm login on your Steam mobile app...
 Logged in successfully as myuser

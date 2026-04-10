@@ -64,11 +64,11 @@ async fn main() {
     };
 
     let filter = if opts.debug {
-        "steam=debug,steam_client=debug,depotdownloader=debug"
+        "steam=debug,steam_client=debug,ddl=debug"
     } else if cfg!(debug_assertions) {
-        "steam=info,steam_client=info,depotdownloader=info"
+        "steam=info,steam_client=info,ddl=info"
     } else {
-        "steam=warn,steam_client=warn,depotdownloader=warn"
+        "steam=warn,steam_client=warn,ddl=warn"
     };
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
