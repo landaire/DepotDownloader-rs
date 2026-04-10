@@ -7,3 +7,5 @@ examples/python/build/
 examples/python/.pytest_cache/
 examples/python/__pycache__/
 examples/python/tests/__pycache__/
+.claude/
+depots/
