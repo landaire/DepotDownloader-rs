@@ -656,8 +656,8 @@ fn set_executable_if_needed(task: &FileTask) {
         if task
             .flags
             .is_some_and(|f| steam::enums::DepotFileFlags(f).is_executable())
+            && let Ok(metadata) = std::fs::metadata(&task.path)
         {
-            if let Ok(metadata) = std::fs::metadata(&task.path) {
                 let mut perms = metadata.permissions();
                 let mode = perms.mode();
                 // Add execute bits for user/group/other
@@ -668,7 +668,6 @@ fn set_executable_if_needed(task: &FileTask) {
                         task.filename
                     );
                 }
-            }
         }
     }
 

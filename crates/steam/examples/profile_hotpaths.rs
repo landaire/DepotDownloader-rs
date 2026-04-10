@@ -52,7 +52,7 @@ fn build_large_binary_kv() -> Vec<u8> {
 
         buf.push(KvTag::Int32 as u8);
         buf.extend_from_slice(b"size_mb\0");
-        buf.extend_from_slice(&(512i32 * (i as i32 + 1)).to_le_bytes());
+        buf.extend_from_slice(&(512i32 * (i + 1)).to_le_bytes());
 
         for j in 0..10 {
             let branch_key = format!("branch_{j}\0");

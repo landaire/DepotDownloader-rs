@@ -13,7 +13,7 @@ depends_post = ["fmt"]
 
 [tasks.clippy-fix]
 description = "Runs cargo-clippy-fix against all features"
-run = "cargo clippy --fix --all-features --allow-dirty"
+run = "cargo clippy --fix --all-features --all-targets --allow-dirty"
 depends_post = ["fmt"]
 
 [tasks.fix-all]
