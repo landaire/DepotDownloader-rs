@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/steam", "crates/steam-client", "crates/depotdownloader"]
+members = ["crates/steam", "crates/steam-client", "crates/steam-ffi", "crates/depotdownloader"]
 resolver = "2"
 
 [workspace.package]

@@ -36,8 +36,6 @@ fn all_captures() -> Vec<(&'static str, CaptureFile)> {
         .collect()
 }
 
-// ── Handshake parsing (unencrypted packets 0 and 1) ──────────
-
 #[test]
 fn all_captures_have_valid_encrypt_request() {
     for (name, capture) in all_captures() {
@@ -135,8 +133,6 @@ fn all_captures_have_consistent_structure() {
     }
 }
 
-// ── Capture file round-trip ──────────────────────────────────
-
 #[test]
 fn capture_file_round_trips_through_json() {
     let original = load_capture("depots_480.json");
@@ -154,8 +150,6 @@ fn capture_file_round_trips_through_json() {
         assert_eq!(a.payload_b64, b.payload_b64);
     }
 }
-
-// ── Replay transport ─────────────────────────────────────────
 
 #[tokio::test]
 async fn replay_transport_serves_packets_in_order() {

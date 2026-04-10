@@ -1,0 +1,17 @@
+[package]
+name = "steam-ffi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+steam = { path = "../steam" }
+steam-client = { path = "../steam-client" }
+diplomat = "0.15"
+diplomat-runtime = "0.15"
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+prost.workspace = true
+reqwest.workspace = true
+base64.workspace = true

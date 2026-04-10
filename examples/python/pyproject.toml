@@ -1,0 +1,19 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.4"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "steam-ffi-example"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+build-dir = "build/{wheel_tag}"
+
+[tool.scikit-build.cmake.define]
+STEAM_FFI_LIB_DIR = {env = "STEAM_FFI_LIB_DIR"}
+STEAM_FFI_BINDINGS_DIR = {env = "STEAM_FFI_BINDINGS_DIR"}

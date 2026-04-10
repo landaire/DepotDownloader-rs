@@ -89,6 +89,43 @@ Confirm login on your Steam mobile app...
 Logged in successfully as myuser
 ```
 
+### FFI bindings
+
+The `steam-ffi` crate exposes the full Steam client API over a C ABI using [rust-diplomat](https://github.com/rust-diplomat/diplomat). This lets you use the library from C, C++, Python, or any language with C FFI support.
+
+```bash
+cargo build --release -p steam-ffi
+cargo install diplomat-tool
+diplomat-tool cpp crates/steam-ffi/bindings/cpp --entry crates/steam-ffi/src/lib.rs
+```
+
+A working Python example using [nanobind](https://github.com/wjakob/nanobind) is in `examples/python/`. It connects to Steam, downloads a manifest, decrypts filenames, and lists files:
+
+```python
+from steam_ffi_ext import Runtime, CmServerList, SteamClient, CdnClient
+
+rt = Runtime()
+servers = CmServerList.fetch(rt)
+client = SteamClient.connect(rt, servers)
+client.login_anonymous(rt)
+
+tokens = client.get_access_tokens(rt, [480])
+app_infos = client.get_product_info(rt, tokens)
+cdn_servers = client.get_cdn_servers(rt)
+
+cdn = CdnClient()
+manifest = cdn.download_manifest(rt, cdn_servers, 0, 481, 3183503801510301321, 0)
+
+if manifest.filenames_encrypted:
+    key = client.get_depot_key(rt, 481, 480)
+    manifest.decrypt_filenames(key)
+
+for i in range(manifest.file_count):
+    print(f"{manifest.file_name(i)}: {manifest.file_size(i)} bytes")
+```
+
+See [crates/steam-ffi/README.md](crates/steam-ffi/README.md) for full details.
+
 ### Benchmarks
 
 | Benchmark | Rust | C# | Speedup |
