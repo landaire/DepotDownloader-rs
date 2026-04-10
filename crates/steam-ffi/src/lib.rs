@@ -689,7 +689,7 @@ mod ffi {
             self.0.is_some()
         }
 
-        pub fn raw_bytes(&self) -> &[u8] {
+        pub fn raw_bytes<'a>(&'a self) -> &'a [u8] {
             match &self.0 {
                 Some(data) => data.as_slice(),
                 None => &[],
@@ -795,7 +795,7 @@ mod ffi {
     pub struct ChunkData(Vec<u8>);
 
     impl ChunkData {
-        pub fn as_bytes(&self) -> &[u8] {
+        pub fn as_bytes<'a>(&'a self) -> &'a [u8] {
             &self.0
         }
 
