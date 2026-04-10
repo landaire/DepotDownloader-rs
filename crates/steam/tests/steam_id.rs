@@ -1,6 +1,7 @@
 //! SteamID tests ported from SteamKit2's SteamIDFacts.cs.
 
-use steam::enums::{EAccountType, EUniverse};
+use steam::enums::EAccountType;
+use steam::enums::EUniverse;
 use steam::types::SteamId;
 
 #[test]
@@ -63,12 +64,7 @@ fn credential_login_steamid() {
 
 #[test]
 fn anonymous_login_steamid() {
-    let sid = SteamId::from_parts(
-        EUniverse::Public as u8,
-        EAccountType::AnonUser as u8,
-        0,
-        0,
-    );
+    let sid = SteamId::from_parts(EUniverse::Public as u8, EAccountType::AnonUser as u8, 0, 0);
     assert_eq!(sid.universe(), EUniverse::Public as u8);
     assert_eq!(sid.account_type(), EAccountType::AnonUser as u8);
     assert_eq!(sid.account_id(), 0);
@@ -83,12 +79,7 @@ fn credential_and_anon_steamids_differ() {
         0,
         0,
     );
-    let anon = SteamId::from_parts(
-        EUniverse::Public as u8,
-        EAccountType::AnonUser as u8,
-        0,
-        0,
-    );
+    let anon = SteamId::from_parts(EUniverse::Public as u8, EAccountType::AnonUser as u8, 0, 0);
     assert_ne!(cred.raw(), anon.raw());
     assert_ne!(cred.account_type(), anon.account_type());
 }

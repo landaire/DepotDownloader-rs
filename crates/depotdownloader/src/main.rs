@@ -337,12 +337,9 @@ async fn authenticate_credentials(
         let exponent = rsa_response.publickey_exp.ok_or("missing RSA exponent")?;
         let timestamp = rsa_response.timestamp.ok_or("missing RSA timestamp")?;
 
-        let n =
-            BigUint::parse_bytes(modulus.as_bytes(), 16).ok_or("invalid RSA modulus hex")?;
-        let e =
-            BigUint::parse_bytes(exponent.as_bytes(), 16).ok_or("invalid RSA exponent hex")?;
-        let public_key =
-            RsaPublicKey::new(n, e).map_err(|e| format!("invalid RSA key: {e}"))?;
+        let n = BigUint::parse_bytes(modulus.as_bytes(), 16).ok_or("invalid RSA modulus hex")?;
+        let e = BigUint::parse_bytes(exponent.as_bytes(), 16).ok_or("invalid RSA exponent hex")?;
+        let public_key = RsaPublicKey::new(n, e).map_err(|e| format!("invalid RSA key: {e}"))?;
 
         let mut rng = rsa::rand_core::OsRng;
         let encrypted_password = public_key
@@ -378,7 +375,9 @@ async fn authenticate_credentials(
                     steam::enums::EResultError::InvalidPassword,
                 ),
             )) if attempts < MAX_PASSWORD_ATTEMPTS => {
-                eprintln!("Invalid password. Please try again ({attempts}/{MAX_PASSWORD_ATTEMPTS}).");
+                eprintln!(
+                    "Invalid password. Please try again ({attempts}/{MAX_PASSWORD_ATTEMPTS})."
+                );
             }
             Err(e) => return Err(e.into()),
         }
@@ -1006,13 +1005,7 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
 
         let cdn = steam::cdn::CdnClient::new()?;
         let manifest_bytes = cdn
-            .download_manifest(
-                &cdn_servers[0],
-                depot_id,
-                manifest_id,
-                request_code,
-                None,
-            )
+            .download_manifest(&cdn_servers[0], depot_id, manifest_id, request_code, None)
             .await?;
 
         let mut manifest = steam_client::manifest::extract_and_parse(&manifest_bytes)?;

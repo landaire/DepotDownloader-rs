@@ -82,19 +82,17 @@ impl CliError {
             Self::Steam(SteamError::Connection(ConnectionError::ServiceMethodFailed(e))) => {
                 use steam::enums::EResultError;
                 match e {
-                    EResultError::InvalidPassword => Some(
-                        "Invalid password. Check your credentials and try again.",
-                    ),
+                    EResultError::InvalidPassword => {
+                        Some("Invalid password. Check your credentials and try again.")
+                    }
                     EResultError::TwoFactorRequired => Some(
                         "This account requires two-factor authentication.\n\
                          A Steam Guard code will be requested during login.",
                     ),
-                    EResultError::RateLimitExceeded | EResultError::LoginDeniedThrottle => Some(
-                        "Too many login attempts. Wait a few minutes and try again.",
-                    ),
-                    EResultError::Expired => Some(
-                        "Session expired. Try logging in again.",
-                    ),
+                    EResultError::RateLimitExceeded | EResultError::LoginDeniedThrottle => {
+                        Some("Too many login attempts. Wait a few minutes and try again.")
+                    }
+                    EResultError::Expired => Some("Session expired. Try logging in again."),
                     _ => None,
                 }
             }
@@ -248,9 +246,9 @@ mod tests {
 
     #[test]
     fn human_message_for_encryption_failed() {
-        let err = CliError::Steam(SteamError::Connection(
-            ConnectionError::EncryptionFailed(EResultError::Fail),
-        ));
+        let err = CliError::Steam(SteamError::Connection(ConnectionError::EncryptionFailed(
+            EResultError::Fail,
+        )));
         let msg = err.human_message().unwrap();
         assert!(msg.contains("Encryption handshake"));
     }
@@ -264,12 +262,10 @@ mod tests {
 
     #[test]
     fn human_message_for_depot_access_denied() {
-        let err = CliError::Steam(SteamError::Connection(
-            ConnectionError::DepotAccessDenied {
-                depot_id: 12345,
-                error: EResultError::AccessDenied,
-            },
-        ));
+        let err = CliError::Steam(SteamError::Connection(ConnectionError::DepotAccessDenied {
+            depot_id: 12345,
+            error: EResultError::AccessDenied,
+        }));
         let msg = err.human_message().unwrap();
         assert!(msg.contains("Access denied"));
     }
