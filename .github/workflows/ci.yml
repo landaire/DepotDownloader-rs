@@ -47,6 +47,6 @@ jobs:
           cd examples/python
           STEAM_FFI_LIB_DIR="$GITHUB_WORKSPACE/target/release" \
           STEAM_FFI_BINDINGS_DIR="$GITHUB_WORKSPACE/crates/steam-ffi/bindings/cpp" \
-          uv run --extra dev pytest tests/ -v
+          uv run --group dev pytest tests/ -v
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
