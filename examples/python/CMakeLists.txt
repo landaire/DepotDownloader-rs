@@ -23,3 +23,12 @@ else()
 endif()
 
 install(TARGETS steam_ffi_ext LIBRARY DESTINATION .)
+
+# Bundle the Rust cdylib into the wheel so consumers don't need to build it
+if(WIN32)
+    install(FILES ${STEAM_FFI_LIB_DIR}/steam_ffi.dll DESTINATION .)
+elseif(APPLE)
+    install(FILES ${STEAM_FFI_LIB_DIR}/libsteam_ffi.dylib DESTINATION .)
+else()
+    install(FILES ${STEAM_FFI_LIB_DIR}/libsteam_ffi.so DESTINATION .)
+endif()

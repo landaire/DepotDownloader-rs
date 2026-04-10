@@ -50,33 +50,41 @@ Runtime_destroy(rt);
 
 ### Using from Python
 
-See `examples/python/` for a complete working example. The Python wrapper uses `ctypes` to load the cdylib directly:
+See `examples/python/` for a complete working example using [nanobind](https://github.com/wjakob/nanobind). The diplomat C++ headers are wrapped into a native Python extension with proper classes and automatic lifetime management:
 
 ```python
-from steam import Runtime, CellId, CmServerList, SteamClient, CdnClient, AppId, DepotId, ManifestId
+from steam_ffi_ext import Runtime, CmServerList, SteamClient, CdnClient
 
 rt = Runtime()
-cell_id = CellId()
-servers = CmServerList.fetch(rt, cell_id)
-client = SteamClient.connect_with_retry(rt, servers)
-client.login_anonymous(rt, cell_id)
+servers = CmServerList.fetch(rt)
+client = SteamClient.connect(rt, servers)
+client.login_anonymous(rt)
 
 tokens = client.get_access_tokens(rt, [480])
 app_infos = client.get_product_info(rt, tokens)
-cdn_servers = client.get_cdn_servers(rt, cell_id)
+cdn_servers = client.get_cdn_servers(rt)
 
 cdn = CdnClient()
-manifest = cdn.download_manifest(rt, cdn_servers, 0, DepotId(481), ManifestId(3183503801510301321), 0)
+manifest = cdn.download_manifest(rt, cdn_servers, 0, 481, 3183503801510301321, 0)
 
 if manifest.filenames_encrypted:
-    key = client.get_depot_key(rt, DepotId(481), AppId(480))
+    key = client.get_depot_key(rt, 481, 480)
     manifest.decrypt_filenames(key)
 
-for f in manifest.files:
-    print(f"{f.name}: {f.size} bytes")
+for i in range(manifest.file_count):
+    print(f"{manifest.file_name(i)}: {manifest.file_size(i)} bytes")
 ```
 
-All opaque handles are automatically cleaned up by Python's garbage collector.
+To build the Python extension locally:
+
+```bash
+cd examples/python
+STEAM_FFI_LIB_DIR=/path/to/target/release \
+STEAM_FFI_BINDINGS_DIR=/path/to/crates/steam-ffi/bindings/cpp \
+pip install -e .
+```
+
+Pre-built wheels are attached to each GitHub release.
 
 ### Using from other languages
 
