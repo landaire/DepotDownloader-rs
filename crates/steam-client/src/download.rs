@@ -1,17 +1,40 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use bytes::Bytes;
 use tokio::sync::{Semaphore, mpsc};
 
 use steam::cdn::CdnClient;
 use steam::cdn::server::CdnServer;
 use steam::depot::chunk::process_chunk;
 use steam::depot::manifest::{DepotManifest, ManifestChunk};
-use steam::depot::{DepotId, DepotKey};
+use steam::depot::{ChunkId, DepotId, DepotKey};
 
 use crate::event::DownloadEvent;
 
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
+/// Trait for fetching raw chunk data. The real implementation goes through
+/// the CDN; tests can substitute a mock that serves data from memory.
+#[async_trait]
+pub trait ChunkFetcher: Send + Sync {
+    async fn fetch_chunk(&self, depot_id: DepotId, chunk_id: &ChunkId) -> Result<Bytes, BoxError>;
+}
+
+/// Default implementation that fetches via the CDN HTTP client.
+pub struct CdnChunkFetcher {
+    pub cdn: CdnClient,
+    pub server: CdnServer,
+    pub cdn_auth_token: Option<String>,
+}
+
+#[async_trait]
+impl ChunkFetcher for CdnChunkFetcher {
+    async fn fetch_chunk(&self, depot_id: DepotId, chunk_id: &ChunkId) -> Result<Bytes, BoxError> {
+        Ok(self.cdn.download_chunk(&self.server, depot_id, chunk_id, self.cdn_auth_token.as_deref()).await?)
+    }
+}
+
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Send an event, logging if the receiver has gone away.
 macro_rules! send_event {
@@ -25,19 +48,14 @@ macro_rules! send_event {
 /// A depot download job. Carries all shared context needed to download
 /// chunks from a single depot.
 pub struct DepotJob {
-    cdn: CdnClient,
-    server: CdnServer,
+    fetcher: Arc<dyn ChunkFetcher>,
     depot_id: DepotId,
     depot_key: DepotKey,
-    cdn_auth_token: Option<String>,
     install_dir: PathBuf,
     semaphore: Arc<Semaphore>,
     event_tx: mpsc::UnboundedSender<DownloadEvent>,
-    /// When true, verify existing files and only re-download corrupted chunks.
     verify: bool,
-    /// File filter - only download files matching this filter.
     file_filter: Option<FileFilter>,
-    /// Previous manifest for delta downloads.
     previous_manifest: Option<DepotManifest>,
 }
 
@@ -130,12 +148,29 @@ impl DepotJob {
             }
 
             // Find matching file in previous manifest for delta comparison
-            let old_chunks: Option<Vec<ManifestChunk>> = self.previous_manifest.as_ref()
+            let old_file = self.previous_manifest.as_ref()
                 .and_then(|old| {
                     old.files.iter()
                         .find(|f| f.filename.as_deref() == Some(&filename))
-                        .map(|f| f.chunks.clone())
                 });
+
+            // Skip entirely if the file content hash is unchanged
+            if let Some(old) = old_file {
+                if old.sha_content == file.sha_content
+                    && file.sha_content.is_some()
+                    && self.install_dir.join(&filename).exists()
+                {
+                    tracing::debug!("{filename}: unchanged, skipping");
+                    send_event!(self.event_tx, DownloadEvent::FileSkipped {
+                        depot_id: self.depot_id,
+                        filename,
+                    });
+                    files_completed += 1;
+                    continue;
+                }
+            }
+
+            let old_chunks = old_file.map(|f| f.chunks.clone());
 
             let task = FileTask {
                 path: self.install_dir.join(&filename),
@@ -179,6 +214,36 @@ impl DepotJob {
                 files_completed,
                 files_total,
             });
+        }
+
+        // Delete files that existed in the previous manifest but not in the new one
+        if let Some(ref old_manifest) = self.previous_manifest {
+            let new_filenames: std::collections::HashSet<&str> = manifest.files
+                .iter()
+                .filter_map(|f| f.filename.as_deref())
+                .collect();
+
+            for old_file in &old_manifest.files {
+                let name = match old_file.filename.as_deref() {
+                    Some(n) => n,
+                    None => continue,
+                };
+
+                if old_file.flags.is_some_and(|f| steam::enums::DepotFileFlags(f).is_directory()) {
+                    continue;
+                }
+
+                if !new_filenames.contains(name) {
+                    let path = self.install_dir.join(name);
+                    if path.exists() {
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            tracing::warn!("Failed to delete removed file {name}: {e}");
+                        } else {
+                            tracing::info!("Deleted removed file: {name}");
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -309,13 +374,8 @@ impl DepotJob {
                 tracing::debug!("Fetching chunk {chunk_id}");
 
                 let raw = match job
-                    .cdn
-                    .download_chunk(
-                        &job.server,
-                        job.depot_id,
-                        &chunk_id,
-                        job.cdn_auth_token.as_deref(),
-                    )
+                    .fetcher
+                    .fetch_chunk(job.depot_id, &chunk_id)
                     .await
                 {
                     Ok(data) => {
@@ -375,16 +435,14 @@ impl DepotJob {
     /// Clone the shared (cheap) state for moving into a spawned task.
     fn clone_shared(&self) -> DepotJob {
         DepotJob {
-            cdn: self.cdn.clone(),
-            server: self.server.clone(),
+            fetcher: self.fetcher.clone(),
             depot_id: self.depot_id,
             depot_key: self.depot_key.clone(),
-            cdn_auth_token: self.cdn_auth_token.clone(),
             install_dir: self.install_dir.clone(),
             semaphore: self.semaphore.clone(),
             event_tx: self.event_tx.clone(),
             verify: self.verify,
-            file_filter: None, // filter only needed at the top-level download loop
+            file_filter: None,
             previous_manifest: None,
         }
     }
@@ -469,11 +527,9 @@ struct FileTask {
 /// Builder for [`DepotJob`].
 #[derive(Default)]
 pub struct DepotJobBuilder {
-    cdn: Option<CdnClient>,
-    server: Option<CdnServer>,
+    fetcher: Option<Arc<dyn ChunkFetcher>>,
     depot_id: Option<DepotId>,
     depot_key: Option<DepotKey>,
-    cdn_auth_token: Option<String>,
     install_dir: Option<PathBuf>,
     max_downloads: Option<usize>,
     event_tx: Option<mpsc::UnboundedSender<DownloadEvent>>,
@@ -483,13 +539,12 @@ pub struct DepotJobBuilder {
 }
 
 impl DepotJobBuilder {
-    pub fn cdn(mut self, cdn: CdnClient) -> Self {
-        self.cdn = Some(cdn);
-        self
+    pub fn cdn(self, cdn: CdnClient, server: CdnServer, cdn_auth_token: Option<String>) -> Self {
+        self.fetcher(Arc::new(CdnChunkFetcher { cdn, server, cdn_auth_token }))
     }
 
-    pub fn server(mut self, server: CdnServer) -> Self {
-        self.server = Some(server);
+    pub fn fetcher(mut self, fetcher: Arc<dyn ChunkFetcher>) -> Self {
+        self.fetcher = Some(fetcher);
         self
     }
 
@@ -503,10 +558,7 @@ impl DepotJobBuilder {
         self
     }
 
-    pub fn cdn_auth_token(mut self, token: Option<String>) -> Self {
-        self.cdn_auth_token = token;
-        self
-    }
+
 
     pub fn install_dir(mut self, dir: PathBuf) -> Self {
         self.install_dir = Some(dir);
@@ -540,11 +592,9 @@ impl DepotJobBuilder {
 
     pub fn build(self) -> Result<DepotJob, &'static str> {
         Ok(DepotJob {
-            cdn: self.cdn.ok_or("cdn is required")?,
-            server: self.server.ok_or("server is required")?,
+            fetcher: self.fetcher.ok_or("fetcher is required (use .cdn() or .fetcher())")?,
             depot_id: self.depot_id.ok_or("depot_id is required")?,
             depot_key: self.depot_key.ok_or("depot_key is required")?,
-            cdn_auth_token: self.cdn_auth_token,
             install_dir: self.install_dir.ok_or("install_dir is required")?,
             semaphore: Arc::new(Semaphore::new(self.max_downloads.unwrap_or(8))),
             event_tx: self.event_tx.ok_or("event_sender is required")?,

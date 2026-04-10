@@ -645,26 +645,25 @@ async fn run_download(opts: &Options, args: &cli::DownloadArgs) -> Result<(), Cl
         // Load previous manifest for delta downloads
         let config_path = steam_client::manifest::DepotConfig::path_for(&base_dir);
         let depot_config = steam_client::manifest::DepotConfig::load(&config_path);
-        let previous_manifest = depot_config
-            .get_installed(depot_id)
-            .and_then(|old_id| {
-                if old_id == manifest_id {
-                    None // Same manifest, no delta needed
-                } else {
-                    cache.load(depot_id, old_id)
-                }
-            });
+        let installed_id = depot_config.get_installed(depot_id);
+
+        if installed_id == Some(manifest_id) && !args.verify {
+            tracing::info!("Depot {depot_id} already up to date (manifest {manifest_id})");
+            continue;
+        }
+
+        let previous_manifest = installed_id
+            .filter(|&old_id| old_id != manifest_id)
+            .and_then(|old_id| cache.load(depot_id, old_id));
 
         if previous_manifest.is_some() {
             tracing::info!("Delta download: comparing against previous manifest");
         }
 
         let job = steam_client::download::DepotJob::builder()
-            .cdn(cdn.clone())
-            .server(cdn_servers[0].clone())
+            .cdn(cdn.clone(), cdn_servers[0].clone(), cdn_auth.token)
             .depot_id(depot_id)
             .depot_key(depot_key)
-            .cdn_auth_token(cdn_auth.token)
             .install_dir(if custom_output {
                 base_dir.clone()
             } else {
@@ -934,11 +933,9 @@ async fn run_workshop(opts: &Options, args: &cli::WorkshopArgs) -> Result<(), Cl
             let progress_handle = download::spawn_progress_renderer(event_rx);
 
             let job = steam_client::download::DepotJob::builder()
-                .cdn(cdn)
-                .server(cdn_servers[0].clone())
+                .cdn(cdn, cdn_servers[0].clone(), cdn_auth.token)
                 .depot_id(depot_id)
                 .depot_key(depot_key)
-                .cdn_auth_token(cdn_auth.token)
                 .install_dir(output)
                 .max_downloads(opts.max_downloads)
                 .event_sender(event_tx)

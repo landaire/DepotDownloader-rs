@@ -8,6 +8,8 @@ steam = { path = "../steam" }
 tokio.workspace = true
 prost.workspace = true
 zip.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 regex.workspace = true

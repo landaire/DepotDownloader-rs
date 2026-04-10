@@ -2018,6 +2018,8 @@ dependencies = [
 name = "steam-client"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "bytes",
  "prost",
  "regex",
  "serde",
