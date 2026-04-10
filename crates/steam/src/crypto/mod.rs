@@ -35,8 +35,7 @@ pub fn symmetric_decrypt_ecb(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, Cry
 
 /// AES-256-CBC encrypt with a given IV.
 pub fn symmetric_encrypt_cbc(key: &[u8; 32], iv: &[u8; 16], plaintext: &[u8]) -> Vec<u8> {
-    cbc::Encryptor::<Aes256>::new(key.into(), iv.into())
-        .encrypt_padded_vec::<Pkcs7>(plaintext)
+    cbc::Encryptor::<Aes256>::new(key.into(), iv.into()).encrypt_padded_vec::<Pkcs7>(plaintext)
 }
 
 /// AES-256-CBC decrypt with a given IV.
