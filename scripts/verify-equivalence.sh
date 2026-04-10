@@ -4,9 +4,12 @@ set -euo pipefail
 DD_RS="./target/release/depotdownloader"
 DD_CS="DepotDownloader"
 
-RUST_DIR=$(mktemp -d)
-CS_DIR=$(mktemp -d)
-trap "rm -rf $RUST_DIR $CS_DIR" EXIT
+BENCH_DIR="/mnt/g/dev/depotdownloader-rs/.bench/equiv"
+mkdir -p "$BENCH_DIR"
+RUST_DIR="$BENCH_DIR/rust"
+CS_DIR="$BENCH_DIR/cs"
+mkdir -p "$RUST_DIR" "$CS_DIR"
+trap "rm -rf $BENCH_DIR" EXIT
 
 APP=480
 DEPOT=481

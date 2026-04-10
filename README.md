@@ -74,7 +74,9 @@ As derivative work of SteamRE/DepotDownloader, this project is licensed under GP
 
 Benchmark | Rust | C# | Speedup |
 |---|---|---|---|
-| **List files (Spacewar)** | 1.35s | 2.46s | **1.8x** |
-| **App info (Spacewar)** | 961ms | 2.68s | **2.8x** |
-| **List files (TF2, large)** | 783ms | 2.96s | **3.8x** |
-| **Download (Spacewar)** | 845ms | 3.48s | **4.1x** |
+| **List files: Spacewar** (8 files, 1.8 MiB) | 982ms | 1.15s | **1.2x** |
+| **App info: Spacewar** | 427ms | 2.88s | **6.8x** |
+| **List files: TF2** (1189 files, 29.4 GiB) | 912ms | 2.99s | **3.3x** |
+| **List files: CS2** (2841 files, 50.4 GiB) | 814ms | 4.21s | **5.2x** |
+| **Download: Spacewar** (1.8 MiB) | 1.08s | 3.52s | **3.3x** |
+| **Download: CS2 3 maps** (2.1 GiB) | 5.12s | 9.48s | **1.9x** |
