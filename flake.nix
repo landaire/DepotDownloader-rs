@@ -46,7 +46,6 @@
 
         nativeBuildInputs = with pkgs; [
           pkg-config
-          curl
         ];
 
         buildInputs =
@@ -56,9 +55,6 @@
             pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           ];
 
-        preBuild = ''
-          bash scripts/sync-protos.sh
-        '';
       };
 
       cargoArtifacts = craneLib.buildDepsOnly commonArgs;
@@ -78,7 +74,6 @@
         buildInputs = with pkgs; [
           rustToolchain
           pkg-config
-          curl
           cargo-insta
           jujutsu
         ];

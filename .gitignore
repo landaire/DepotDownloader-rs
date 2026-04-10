@@ -1,3 +1,2 @@
 /target
-crates/steam/proto/steam/
 crates/steam/src/generated/_.rs
