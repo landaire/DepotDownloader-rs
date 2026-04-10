@@ -57,6 +57,30 @@ macro_rules! send_event {
     };
 }
 
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    pub max_attempts: u32,
+    pub initial_delay: std::time::Duration,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 5,
+            initial_delay: std::time::Duration::from_secs(1),
+        }
+    }
+}
+
+impl RetryConfig {
+    pub fn none() -> Self {
+        Self {
+            max_attempts: 1,
+            initial_delay: std::time::Duration::ZERO,
+        }
+    }
+}
+
 /// A depot download job. Carries all shared context needed to download
 /// chunks from a single depot.
 pub struct DepotJob {
@@ -69,6 +93,7 @@ pub struct DepotJob {
     verify: bool,
     file_filter: Option<FileFilter>,
     previous_manifest: Option<DepotManifest>,
+    retry: RetryConfig,
 }
 
 /// Filter to select which files to download.
@@ -294,28 +319,6 @@ impl DepotJob {
     /// In verify mode: if the file already exists, validate each chunk's
     /// Adler32 checksum and only re-download corrupted chunks.
     async fn download_file(&self, task: &FileTask) -> Result<(), BoxError> {
-        // If verifying and the file exists with correct size, check chunks
-        if self.verify
-            && task.path.exists()
-            && let Some(expected_size) = task.size
-            && let Ok(meta) = tokio::fs::metadata(&task.path).await
-            && meta.len() == expected_size
-        {
-            let needs_download = verify_chunks(&task.path, &task.chunks).await?;
-            if needs_download.is_empty() {
-                tracing::debug!("{}: all chunks valid, skipping", task.filename);
-                return Ok(());
-            }
-            tracing::info!(
-                "{}: {} of {} chunks need re-download",
-                task.filename,
-                needs_download.len(),
-                task.chunks.len()
-            );
-            // TODO: only download the bad chunks instead of the whole file
-        }
-
-        // Create staging path: .staging/<filename>
         let staging_dir = self.install_dir.join(".staging");
         let staging_path = staging_dir.join(&task.filename);
 
@@ -326,16 +329,58 @@ impl DepotJob {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&staging_path)
-            .await?;
-
-        if let Some(size) = task.size {
-            file.set_len(size).await?;
+        // If the final file already exists and is fully valid, skip entirely
+        if file_has_valid_chunks(&task.path, task.size, &task.chunks).await? {
+            tracing::debug!("{}: final file valid, skipping", task.filename);
+            return Ok(());
         }
+
+        // Check staging file from a previous interrupted run
+        let mut valid_chunks = std::collections::HashSet::new();
+        let resuming = if file_has_correct_size(&staging_path, task.size).await {
+            let bad = verify_chunks(&staging_path, &task.chunks).await?;
+            for (i, chunk) in task.chunks.iter().enumerate() {
+                if !bad.contains(&i)
+                    && let Some(ref id) = chunk.id
+                {
+                    valid_chunks.insert(*id);
+                }
+            }
+            if valid_chunks.len() == task.chunks.len() {
+                tracing::debug!("{}: staging file fully valid, finishing", task.filename);
+                tokio::fs::rename(&staging_path, &task.path).await?;
+                return Ok(());
+            }
+            if !valid_chunks.is_empty() {
+                tracing::info!(
+                    "{}: resuming, {}/{} chunks already valid in staging",
+                    task.filename,
+                    valid_chunks.len(),
+                    task.chunks.len()
+                );
+            }
+            true
+        } else {
+            false
+        };
+
+        let file = if resuming {
+            tokio::fs::OpenOptions::new()
+                .write(true)
+                .open(&staging_path)
+                .await?
+        } else {
+            let f = tokio::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&staging_path)
+                .await?;
+            if let Some(size) = task.size {
+                f.set_len(size).await?;
+            }
+            f
+        };
 
         let file = Arc::new(tokio::sync::Mutex::new(file));
 
@@ -399,6 +444,11 @@ impl DepotJob {
                 }
             };
 
+            // Skip chunks already validated (from staging resume or delta reuse)
+            if valid_chunks.contains(&chunk_id) {
+                continue;
+            }
+
             // Skip chunks that were already copied from the previous version
             if let Some(ref old_chunks) = task.old_chunks
                 && task.path.exists()
@@ -415,18 +465,35 @@ impl DepotJob {
 
             let handle = tokio::spawn(async move {
                 let _permit = job.semaphore.acquire().await?;
-                tracing::debug!("Fetching chunk {chunk_id}");
 
-                let raw = match job.fetcher.fetch_chunk(job.depot_id, &chunk_id).await {
-                    Ok(data) => {
-                        tracing::debug!("Downloaded chunk {chunk_id} ({} bytes)", data.len());
-                        data
+                let max = job.retry.max_attempts;
+                let mut raw = None;
+                for attempt in 0..max {
+                    match job.fetcher.fetch_chunk(job.depot_id, &chunk_id).await {
+                        Ok(data) => {
+                            tracing::debug!("Downloaded chunk {chunk_id} ({} bytes)", data.len());
+                            raw = Some(data);
+                            break;
+                        }
+                        Err(e) => {
+                            if attempt + 1 < max {
+                                let delay = job.retry.initial_delay * (1 << attempt);
+                                tracing::warn!(
+                                    "Chunk {chunk_id} attempt {}/{max} failed: {e}, retrying in {}s",
+                                    attempt + 1,
+                                    delay.as_secs()
+                                );
+                                tokio::time::sleep(delay).await;
+                            } else {
+                                tracing::error!(
+                                    "Chunk {chunk_id} failed after {max} attempts: {e}"
+                                );
+                                return Err(e);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        tracing::error!("Failed to download chunk {chunk_id}: {e}");
-                        return Err(e);
-                    }
-                };
+                }
+                let raw = raw.unwrap();
 
                 let depot_key = job.depot_key.clone();
                 let decompressed = tokio::task::spawn_blocking(move || {
@@ -488,13 +555,36 @@ impl DepotJob {
             verify: self.verify,
             file_filter: None,
             previous_manifest: None,
+            retry: self.retry.clone(),
         }
     }
 }
 
 /// Verify which chunks in an existing file are corrupted.
 ///
-/// Returns the list of chunks that need to be re-downloaded.
+async fn file_has_correct_size(path: &std::path::Path, expected: Option<u64>) -> bool {
+    let Some(expected) = expected else {
+        return false;
+    };
+    tokio::fs::metadata(path)
+        .await
+        .map(|m| m.len() == expected)
+        .unwrap_or(false)
+}
+
+async fn file_has_valid_chunks(
+    path: &std::path::Path,
+    expected_size: Option<u64>,
+    chunks: &[ManifestChunk],
+) -> Result<bool, BoxError> {
+    if !file_has_correct_size(path, expected_size).await {
+        return Ok(false);
+    }
+    let bad = verify_chunks(path, chunks).await?;
+    Ok(bad.is_empty())
+}
+
+/// Returns the list of chunk indices that need to be re-downloaded.
 async fn verify_chunks(
     path: &std::path::Path,
     chunks: &[ManifestChunk],
@@ -588,6 +678,7 @@ pub struct DepotJobBuilder {
     verify: bool,
     file_filter: Option<FileFilter>,
     previous_manifest: Option<DepotManifest>,
+    retry: RetryConfig,
 }
 
 impl DepotJobBuilder {
@@ -644,6 +735,11 @@ impl DepotJobBuilder {
         self
     }
 
+    pub fn retry(mut self, config: RetryConfig) -> Self {
+        self.retry = config;
+        self
+    }
+
     pub fn build(self) -> Result<DepotJob, &'static str> {
         Ok(DepotJob {
             fetcher: self
@@ -657,6 +753,7 @@ impl DepotJobBuilder {
             verify: self.verify,
             file_filter: self.file_filter,
             previous_manifest: self.previous_manifest,
+            retry: self.retry,
         })
     }
 }
