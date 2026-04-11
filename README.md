@@ -1,3 +1,6 @@
+>[!NOTE]
+>After being alive for 2 days, this repo is archived. Its spirit lives on in https://github.com/landaire/steamroom
+
 ## depotdownloader-rs
 
 A translation of https://github.com/SteamRE/DepotDownloader to Rust, leveraging LLMs to do the heavy lifting.
